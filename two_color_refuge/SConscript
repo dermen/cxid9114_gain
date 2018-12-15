@@ -1,0 +1,51 @@
+import libtbx.load_env
+import os
+Import("env_base", "env_etc")
+
+env_etc.ccixfel_dist = libtbx.env.dist_path("cxi_xdr_xes")
+env_etc.ccixfel_include = os.path.dirname(env_etc.ccixfel_dist)
+env_etc.ccixfel_common_includes = [
+  env_etc.ccixfel_include,
+  env_etc.ccixfel_include,
+  env_etc.libtbx_include,
+  env_etc.cctbx_include,
+  env_etc.scitbx_include,
+  env_etc.chiltbx_include,
+  env_etc.omptbx_include,
+  env_etc.boost_include,
+  env_etc.annlib_dist,
+  env_etc.annlib_include[0],
+  env_etc.annlib_include[1],
+  env_etc.annlib_adaptbx_include[0],
+  env_etc.annlib_adaptbx_include[1],
+]
+
+env = env_base.Clone(SHLINKFLAGS=env_etc.shlinkflags)
+env.Append(LIBS=["cctbx"] + env_etc.libm)
+env_etc.include_registry.append(
+  env=env,
+  paths=env_etc.ccixfel_common_includes)
+if (env_etc.static_libraries): builder = env.StaticLibrary
+else:                          builder = env.SharedLibrary
+builder(
+  target="#lib/ccixfel",
+  source=["ccixfel_core.cpp"
+  ])
+
+if (not env_etc.no_boost_python):
+  Import("env_boost_python_ext")
+  env_ccixfel_boost_python_ext = env_boost_python_ext.Clone()
+  env_ccixfel_boost_python_ext.Prepend(
+                 LIBS=["ccixfel", "xfel_mono_sim", "cctbx", "scitbx_boost_python","ann"])
+  env_ccixfel_boost_python_ext.SharedLibrary(
+                 target="#lib/ccixfel_ext", source="ext.cpp")
+  env_ccixfel_boost_python_ext.SharedLibrary(
+                 target="#lib/xscale_ext", source="xscale_mamin/xscale_ext.cpp")
+  env_ccixfel_boost_python_ext.SharedLibrary(
+                 target="#lib/ccixfel_levmar_ext", source="levmar_ext.cpp")
+  env_etc.include_registry.append(
+    env=env_ccixfel_boost_python_ext,
+    paths=env_etc.ccixfel_common_includes)
+  Export("env_ccixfel_boost_python_ext")
+  # SConscript("util_iris/dials/algorithms/spot_prediction/SConscript")
+  SConscript("example_boost/SConscript")
