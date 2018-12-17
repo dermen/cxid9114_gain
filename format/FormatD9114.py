@@ -17,9 +17,10 @@ except ImportError:
 
 import psana
 
+
 d9114_locator_str = """
   d9114 {
-    common_mode = default
+    common_mode_algo = default
       .type = str
       .help = Common mode correction ppg default or unbonded
     }
@@ -32,38 +33,41 @@ class FormatD9114(FormatXTCCspad):
 
     def __init__(self, image_file, **kwargs):
         assert (self.understand(image_file))
-        FormatXTCCspad.__init__(self, image_file, **kwargs)
+        FormatXTCCspad.__init__(self, image_file, locator_scope=d9114_locator_scope, **kwargs)
 
         self._ds = FormatXTCCspad._get_datasource(image_file, self.params)
         self.run_number = self.params.run[0]
         self.cspad = psana.Detector(self.params.detector_address[0])
-        self.dark = self.cspad.pedestal(self.run_number).astype(np.float64)
+        self.dark = self.cspad.pedestals(self.run_number).astype(np.float64)
         self.gain = self.cspad.gain_mask(self.run_number) == 1.
         self.nominal_gain_val = self.cspad._gain_mask_factor
         self.populate_events()
         self.n_images = len(self.times)
-
+        self.params = FormatD9114.get_params(image_file)
         # self.feespec = psana.Detector("FeeSpec-bin")
 
     @staticmethod
+    def get_params(image_file):
+        user_scope = phil.parse( file_name=image_file, process_includes=True)
+        params = d9114_locator_scope.fetch( user_scope).extract()
+        return params
+
+    @staticmethod
     def understand(image_file):
-        try:
-            params = FormatXTC.params_from_phil(d9114_locator_scope, image_file)
-        except Exception:
-            return False
+        params = FormatD9114.get_params(image_file)
         return params.experiment == "cxid9114" and \
-            params.d9114.common_mode in ['default', 'pppg', 'unbonded']
+            params.d9114.common_mode_algo in ['default', 'pppg', 'unbonded']
 
     def get_raw_data(self, index):
         assert len(self.params.detector_address) == 1
-        d = self.get_detector(self, index)
+        d = self.get_detector(index)
 
         event = self._get_event(index)
         raw = self.cspad.raw(event).astype(np.float32)
         data = raw.astype(np.float64) - self.dark
-        if self.params.d9114.common_mode=='default':
+        if self.params.d9114.common_mode_algo=='default':
             self.cspad.common_mode_apply(self.run_number, data, (1,25,25,100,1))
-        elif self.params.d9114.common_mode=='unbonded':
+        elif self.params.d9114.common_mode_algo=='unbonded':
             self.cspad.common_mode_apply( self.run_number, data, (5,0,0,0,0))
 
         data[self.gain] = data[self.gain]  * self.nominal_gain_val
