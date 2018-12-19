@@ -1,6 +1,17 @@
 import numpy as np
 from scipy.ndimage import morphology
-import pylab as plt
+import os
+import h5py
+
+MASK_FILE \
+    =  os.path.join(os.path.dirname(__file__), 'masks.hdf5')
+
+def load_mask(key):
+    with h5py.File(MASK_FILE) as h5:
+        if key not in list(h5.keys()):
+            raise Exception("Only accepts: %s"%", ".join(h5.keys()))
+        mask = h5[key].value
+    return mask
 
 def mask_small_regions(gain_data, Ncutoff=1000):
     """ masks certain high-low gain regions
@@ -25,8 +36,8 @@ def details_mask(raw, border=3, plot=False):
     mask[:,:, :border ] = False
     mask[:,:, -border: ] = False
 
-    plt.hist(raw[ mask==1].ravel(), bins=400)
-    plt.show()
+    # plt.hist(raw[ mask==1].ravel(), bins=400)
+    # plt.show()
     thresh = float(raw_input("Below which value should I mask pixels? "))
 
     pixmask = raw < thresh

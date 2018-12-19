@@ -1,7 +1,9 @@
 import numpy as np
 import pylab as plt
 import lmfit
-import fit_utils, mask_utils, utils
+from cxid9114 import fit_utils, utils
+from cxid9114.mask import mask_utils
+
 
 def get_gain_dists(panel_data, gain_data, mask_data=None, plot=False, norm=False):
     """

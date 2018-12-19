@@ -1,0 +1,13 @@
+experiment = cxid9114
+run = 62
+mode = idx
+detector_address = "CxiDs2.0:Cspad.0"
+cspad  {
+    dark_correction = True
+    apply_gain_mask = True
+    detz_offset = 590
+    common_mode = default
+}
+d9114 {
+    common_mode_algo = pppg
+}

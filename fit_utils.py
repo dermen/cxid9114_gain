@@ -3,7 +3,6 @@ import lmfit
 import numpy as np
 import pylab as plt
 
-
 LOW_GAIN_GAUSS_PARAMS = lmfit.Parameters()
 LOW_GAIN_GAUSS_PARAMS.add('wid0', value= 2.2, min=1)
 LOW_GAIN_GAUSS_PARAMS.add('amp0', value= 0.25 , min=0)
