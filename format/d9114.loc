@@ -10,4 +10,5 @@ cspad  {
 }
 d9114 {
     common_mode_algo = pppg
+    savgol_polyorder = 3
 }
