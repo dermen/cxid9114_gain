@@ -2,6 +2,8 @@ import numpy as np
 
 def smooth(x, beta=10.0, window_size=11):
     """
+    https://glowingpython.blogspot.com/2012/02/convolution-with-numpy.html
+    
     Apply a Kaiser window smoothing convolution.
 
     Parameters
