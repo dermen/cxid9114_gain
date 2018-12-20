@@ -77,7 +77,7 @@ def assemble_cspad(panels, PSF, pixsize=109.92, aspect='equal', a=0,b=0,max_dim=
         m = panels.mean()
         s = panels.std()
         vmin = m-s
-        vmax = m+2*s
+        vmax = m+5*s
 
     imshow_arg = {"vmin":vmin, "vmax":vmax, "interpolation":'none', "cmap":cmap}
 
@@ -96,7 +96,14 @@ def assemble_cspad(panels, PSF, pixsize=109.92, aspect='equal', a=0,b=0,max_dim=
         add_asic_to_ax( ax=ax, I=asicB, 
                         p=cornerB, fs=F[i],s=str(i), **imshow_arg)
 
-    ax.set_facecolor('dimgray')
+    try:
+        ax.set_facecolor('dimgray')
+    except AttributeError:
+        try:
+            ax.set_axis_bgcolor("dimgray")
+        except AttributeError:
+            pass
+        pass
     if show:
         plt.show()
     else:

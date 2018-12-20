@@ -1,15 +1,28 @@
 # DO.DATA.INDEXING.
 
+# from dials.array_family import flex
+import sys
+import numpy as np
+import cPickle
+
 from dials.algorithms.indexing.indexer import master_phil_scope\
     as indexer_phil_scope
+from dxtbx.model.beam import BeamFactory
 from cxi_xdr_xes.two_color import two_color_indexer
-from cxi_xdr_xes.two_color
 from cxi_xdr_xes.command_line.two_color_process import two_color_phil_scope
 from cctbx import crystal
+import dxtbx
+from cxid9114.spots import count_spots
+from libtbx.utils import Sorry
 
 indexer_phil_scope.adopt_scope(two_color_phil_scope)
 params = indexer_phil_scope.extract()
+MIN_SPOT_PER_HIT = 30
 
+
+# =====================================
+# Parameters
+shot_hits = False
 ENERGY_LOW = 8944.
 ENERGY_HIGH = 9034.7
 INDEXER = two_color_indexer.indexer_two_color
@@ -18,26 +31,65 @@ two_color_indexer.N_UNIQUE_V = 20
 
 params.refinement.parameterisation.beam.fix = "all"
 params.refinement.parameterisation.detector.fix = "all"
-params.indexing.KNOWN_SYMMETRY.space_group = KNOWN_SYMMETRY.space_group_info()
+params.indexing.known_symmetry.space_group = KNOWN_SYMMETRY.space_group_info()
 params.refinement.verbosity = 3
 # params.indexing.refinement_protocol.d_min_start
-params.indexing.refinement_protocol.n_macro_cycles = 1
-params.indexing.KNOWN_SYMMETRY.unit_cell = KNOWN_SYMMETRY.unit_cell()
+params.indexing.known_symmetry.unit_cell = KNOWN_SYMMETRY.unit_cell()
 params.indexing.debug = True
-params.indexing.real_space_grid_search.characteristic_grid = 0.015
-params.indexing.stills.refine_all_candidates = False
-params.indexing.KNOWN_SYMMETRY.absolute_angle_tolerance = 5.0
-params.indexing.KNOWN_SYMMETRY.relative_length_tolerance = 0.3
+params.indexing.real_space_grid_search.characteristic_grid = 0.029
+# params.indexing.stills.refine_all_candidates = False
+params.indexing.known_symmetry.absolute_angle_tolerance = 5.0
+params.indexing.known_symmetry.relative_length_tolerance = 0.3
 params.indexing.two_color.high_energy = ENERGY_HIGH
 params.indexing.two_color.low_energy = ENERGY_LOW
 params.indexing.two_color.avg_energy = ENERGY_LOW * .5 + ENERGY_HIGH * .5
 params.indexing.stills.rmsd_min_px = 3.5
+params.indexing.refinement_protocol.n_macro_cycles = 1
+params.indexing.multiple_lattice_search.max_lattices = 20
+# ====================================================================
 
-# iset_data = ImageSetData(reader, masker)
-# imgset = ImageSet(iset_data)
-# imgset.set_beam(beams[0])
-# imgset.set_detector(detector)
-# imagesets = [imgset]
+WAVELEN_LOW = two_color_indexer.EV_CONV_FACTOR / ENERGY_LOW
+WAVELEN_HIGH = two_color_indexer.EV_CONV_FACTOR / ENERGY_HIGH
+BEAM_LOW = BeamFactory.simple_directional((0, 0, 1), WAVELEN_LOW)
+BEAM_HIGH = BeamFactory.simple_directional((0, 0, 1), WAVELEN_HIGH)
 
-#orient = indexer_two_color(reflections, imagesets, params)
-#orient.index()
+if __name__=="__main__":
+    pickle_fname = sys.argv[1]
+    image_fname = sys.argv[2]
+
+    print('Loading reflections')
+    with open(pickle_fname,'r') as f:
+        found_refl = cPickle.load( f)
+    refl_select = count_spots.ReflectionSelect(found_refl)
+
+    print('Loading format')
+    loader = dxtbx.load(image_fname)
+    imgset = loader.get_imageset(loader.get_image_file())
+    from IPython import embed
+    embed()
+    print('Counting spots')
+    idx, Nspot_at_idx = count_spots.count_spots(pickle_fname)
+    where_hits = np.where( Nspot_at_idx > MIN_SPOT_PER_HIT )[0]
+    Nhits = where_hits.shape[0]
+
+    n_indexed = 0
+    print('Iterating over {:d} hits'.format(Nhits))
+    for i_hit in range( Nhits):
+        shot_idx = idx[where_hits[i_hit]]
+        if shot_hits:
+            loader.show_data(shot_idx)
+        hit_imgset = imgset[shot_idx:shot_idx+1]
+        hit_imgset.set_beam(BEAM_LOW)
+        hit_refl = refl_select.select(shot_idx)
+
+        print '\rIndexing shot {:d} (Hit {:d}/{:d}) using {:d} spots' \
+            .format(shot_idx, i_hit+1, Nhits, len(hit_refl)),
+        sys.stdout.flush()
+        orient = INDEXER(reflections=hit_refl, imagesets=[hit_imgset], params=params)
+        try:
+            orient.index()
+            n_indexed += 1
+        except Sorry:
+            print("Could not index")
+            pass
+        print ("Indexed %d / %d hits"%(n_indexed, Nhits) )

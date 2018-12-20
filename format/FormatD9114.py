@@ -3,8 +3,12 @@ from __future__ import absolute_import, division, print_function
 import numpy as np
 import psana
 
+from xfel.cxi.cspad_ana.cspad_tbx import env_distance
 from cxid9114.common_mode.pppg import pppg
 from cxid9114.mask import mask_utils
+from cxid9114 import assemble_cspad
+from scitbx import matrix
+from dxtbx.model.detector import DetectorFactory
 from dxtbx.format.FormatXTC import locator_str
 from dxtbx.format.FormatXTCCspad import FormatXTCCspad, cspad_locator_str
 from scitbx.array_family import flex
@@ -12,7 +16,7 @@ from libtbx import phil
 
 d9114_locator_str = """
   d9114 {
-    common_mode_algo = pppg
+    common_mode_algo = something # put this here to break the understand so D9114 doesnt override XTCCspad by default
       .type = str
       .help = Common mode correction ppg default or unbonded
     low_gain_zero_peak = (-5,5,100)
@@ -62,7 +66,21 @@ class FormatD9114(FormatXTCCspad):
         self.n_images = len(self.times)
         self.params = FormatD9114.get_params(image_file)
         self._set_pppg_args()
+        self._set_psf()
+        self._set_2d_img_info()
+        self.detector_distance = env_distance(self.params.detector_address[0],
+                                              self._ds.env(), self.params.cspad.detz_offset)
         # self.feespec = psana.Detector("FeeSpec-bin")
+
+    def _set_2d_img_info(self):
+        dummie_event = self._get_event(0)
+        self.img2d_mask = self.cspad.image(dummie_event, self.cspad_mask )\
+            .astype(int).astype(bool)
+        self.img_sh = self.img2d_mask.shape
+
+    def show_data(self, index):
+        data = self.get_psana_data(index)* self.cspad_mask
+        assemble_cspad.assemble_cspad(data, self.psf)
 
     def _set_pppg_args(self):
         """
@@ -90,30 +108,59 @@ class FormatD9114(FormatXTCCspad):
         return params.experiment == "cxid9114" and \
                params.d9114.common_mode_algo in ['default', 'pppg', 'unbonded']
 
-    def get_raw_data(self, index):
-        event = self._get_event(index)
-        raw = self.cspad.raw(event).astype(np.float32)
+    def get_detector(self, index=None):
+        return self._detector(self, index)
+
+    def get_psana_data( self, index):
+        self.event = self._get_event(index)
+        raw = self.cspad.raw(self.event).astype(np.float32)
         data = raw.astype(np.float64) - self.dark
         if self.params.d9114.common_mode_algo == 'default':
             self.cspad.common_mode_apply(self.run_number, data, (1, 25, 25, 100, 1))  # default for cspad
         elif self.params.d9114.common_mode_algo == 'unbonded':
             self.cspad.common_mode_apply(self.run_number, data, (
-            5, 0, 0, 0, 0))  # default for non-bonded pixels, but these are not in cxid9114 i believe..
+                5, 0, 0, 0, 0))  # default for non-bonded pixels, but these are not in cxid9114 i believe..
         elif self.params.d9114.common_mode_algo == "pppg":
             pppg(data, self.gain, self.cspad_mask, **self.pppg_args)
 
         data[self.gain] = data[self.gain] * self.nominal_gain_val
 
-        cctbx_det = self.get_detector(index)
-        self._raw_data = []
-        for quad_count, quad in enumerate(cctbx_det.hierarchy()):
-            for sensor_count, sensor in enumerate(quad):
-                for asic_count, asic in enumerate(sensor):
-                    fdim, sdim = asic.get_image_size()
-                    asic_data = data[sensor_count + quad_count * 8, :,
-                                asic_count * fdim:(asic_count + 1) * fdim]  # 8 sensors per quad
-                    self._raw_data.append(flex.double(np.array(asic_data)))
-        return tuple(self._raw_data)
+        return data
+
+    def _set_psf(self):
+        geom = self.cspad.geometry(self.run_number)
+        self.psf = map(np.array, zip(*geom.get_psf()))
+
+    def get_raw_data(self, index):
+        """this is really corrected data..."""
+        data = self.get_psana_data(index)
+        data2d = self.cspad.image(self.event, data)
+        assert( data.dtype==np.float64)
+        #cctbx_det = self.get_detector(index)
+        #self._raw_data = []
+        #for quad_count, quad in enumerate(cctbx_det.hierarchy()):
+        #    for sensor_count, sensor in enumerate(quad):
+        #        for asic_count, asic in enumerate(sensor):
+        #            fdim, sdim = asic.get_image_size()
+        #            asic_data = data[sensor_count + quad_count * 8, :,
+        #                        asic_count * fdim:(asic_count + 1) * fdim]  # 8 sensors per quad
+        #            self._raw_data.append(flex.double(np.array(asic_data)))
+        #return tuple(self._raw_data)
+        return flex.double( data2d*self.img2d_mask)
+
+    def get_detector(self, index=None):
+        return self._get_detector()
+
+    def _get_detector(self):
+        pixel_size=0.10992
+        fast = matrix.col((1.0, 0.0, 0.0))
+        slow = matrix.col((0.0, -1.0, 0.0))
+        image_size = (self.img_sh[1], self.img_sh[0])
+        orig = matrix.col((-image_size[0]*pixel_size/2.,
+                           image_size[1]*pixel_size/2., self.detector_distance))
+        trusted_range = (-100, 2**16)
+        return DetectorFactory.make_detector("", fast, slow, orig,
+            (pixel_size, pixel_size), image_size, trusted_range)
 
 if __name__ == '__main__':
     import sys
