@@ -1,0 +1,16 @@
+spotfinder {
+  filter{
+    min_spot_size = 2
+  }
+  threshold {
+    dispersion {
+      gain = 28.
+      kernel_size = 4 4
+      sigma_background = 6 
+      sigma_strong = 2.25
+      global_threshold = 70
+    }   
+  }
+}
+spotfinder.force_2d=True
+output.shoeboxes = True

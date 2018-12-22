@@ -105,7 +105,7 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
         fast_scan = matrix.col((1.0, 0.0, 0.0))
         slow_scan = matrix.col((0.0, -1.0, 0.0))
 
-        trusted_range = (-200, 2**14)
+        trusted_range = (-200, 2**16)
         name = ""
         self._cctbx_detector = \
             self._detector_factory.make_detector(
@@ -150,6 +150,7 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
              self.mask,
              **PPPG_ARGS)
         self.panels[self.gain] = self.panels[self.gain]*self.gain_val
+        self.panels *= self.mask
 
     def get_detectorbase(self, index=None):
         raise NotImplementedError

@@ -131,6 +131,9 @@ class FormatXTCD9114(FormatXTCCspad):
         return params.experiment == "cxid9114" and \
                params.d9114.common_mode_algo in ['default', 'pppg', 'unbonded']
 
+    def get_psana_raw(self, index=None):
+        return self.cspad.raw(self._get_event(index))
+
     def get_psana_data( self, index):
         self.event = self._get_event(index)
         raw = self.cspad.raw(self.event).astype(np.float32)
