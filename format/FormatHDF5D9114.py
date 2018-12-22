@@ -21,8 +21,8 @@ REQUIRED_KEYS = ['gain_val',
                  'panel_z',
                  'panels',
                  'pedestal']
-
 PIXEL_SIZE = 0.10992  # CSPAD pixel size in mm
+CAMERA_LENGTH = 125  # CSPAD sample-to-detector distance
 IMG_SIZE = (1800, 1800)
 X_OFFSET = 0
 Y_OFFSET = 0
@@ -99,7 +99,7 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
     def _geometry_define(self):
         orig_x = -IMG_SIZE[0]*PIXEL_SIZE*.5 + X_OFFSET
         orig_y = IMG_SIZE[1]*PIXEL_SIZE*.5 + X_OFFSET
-        orig_z = self.panel_Z.mean()
+        orig_z = -CAMERA_LENGTH
         orig = (orig_x, orig_y, orig_z)
 
         fast_scan = matrix.col((1.0, 0.0, 0.0))

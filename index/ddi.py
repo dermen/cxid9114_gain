@@ -27,7 +27,6 @@ if HAS_TWO_COLOR:
     params = indexer_phil_scope.extract()
     MIN_SPOT_PER_HIT = 30
 
-
 #   =====================================
 #   Parameters
     shot_hits = False
@@ -61,8 +60,8 @@ if HAS_TWO_COLOR:
 
 if __name__=="__main__":
     if not HAS_TWO_COLOR:
-        print("Need to install the modue cxi_xdr_xes")
-        exit()
+        print("Need to install the module cxi_xdr_xes")
+        sys.exit()
     pickle_fname = sys.argv[1]
     image_fname = sys.argv[2]
 

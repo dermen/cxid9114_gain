@@ -97,7 +97,7 @@ class FormatXTCD9114(FormatXTCCspad):
         self.img2d = self.cspad.image( self.event, data)
         if CAN_PLOT:
             plt.figure()
-            plt.imshow( self.img2d, **kwargs)
+            plt.imshow(self.img2d, **kwargs)
             plt.show()
         else:
             print("Cannot plot")
