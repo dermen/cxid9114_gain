@@ -10,7 +10,7 @@ except ImportError:
 from xfel.cxi.cspad_ana.cspad_tbx import env_distance
 from cxid9114.common_mode.pppg import pppg
 from cxid9114.mask import mask_utils
-from cxid9114.index.ddi import WAVELEN_LOW
+ from cxid9114.parameters import WAVELEN_LOW
 # from cxid9114 import assemble_cspad
 # from scitbx import matrix
 # from dxtbx.model.detector import DetectorFactory

@@ -8,7 +8,8 @@ from dxtbx.format.FormatHDF5 import FormatHDF5
 from dxtbx.format.FormatStill import FormatStill
 from scitbx import matrix
 from dials.array_family import flex
-from cxid9114.index.ddi import WAVELEN_LOW
+
+from cxid9114.parameters import WAVELEN_LOW
 from cxid9114.common_mode.pppg import pppg
 
 # required HDF5 keys
