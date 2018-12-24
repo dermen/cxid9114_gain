@@ -56,7 +56,7 @@ if HAS_TWO_COLOR:
     BEAM_LOW = BeamFactory.simple_directional((0, 0, 1), parameters.WAVELEN_LOW)
     BEAM_HIGH = BeamFactory.simple_directional((0, 0, 1), parameters.WAVELEN_HIGH)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     if not HAS_TWO_COLOR:
         print("Need to install the module cxi_xdr_xes")
         sys.exit()
