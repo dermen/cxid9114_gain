@@ -128,6 +128,13 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
     def get_num_images(self):
         return self._h5_handle["panels"].shape[0]
 
+    def assemble(self, panels):
+        return np.histogram2d(
+            x=self.hist_args["x"],
+            y=self.hist_args["y"],
+            bins=self.hist_args["bins"],
+            weights=panels.ravel())[0]
+
     def _assemble_panels(self):
         self.panel_img = np.histogram2d(
             x=self.hist_args["x"],
@@ -142,15 +149,18 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
         self._assemble_panels()
         return flex.double(self.panel_img)
 
+    def _apply_mask(self):
+        self.panels *= self.mask
+
     def _correct_panels(self):
         self.panels = self.panels.astype(np.float64)
         self.panels -= self.dark
+        self._apply_mask()
         pppg(self.panels,
              self.gain,
              self.mask,
              **PPPG_ARGS)
         self.panels[self.gain] = self.panels[self.gain]*self.gain_val
-        self.panels *= self.mask
 
     def get_detectorbase(self, index=None):
         raise NotImplementedError

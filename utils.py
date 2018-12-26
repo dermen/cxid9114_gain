@@ -75,3 +75,33 @@ def is_outlier(points, thresh=3.5):
 
 
     return modified_z_score > thresh
+
+
+def write_cxi_peaks(h5, peaks_path, pkX, pkY, pkI):
+    """
+    adds peaks to an hdf5 file in the CXI format
+    :param h5:  h5 file handle
+    :param peaks_path:  peaks group name
+    :param pkX: X-coordinate of  peaks (list of lists)
+    :param pkY: Y-coordinate of peaks (list of lists like pkX)
+    :param pkI: Intensity of peaks (list of float
+    """
+    npeaks = np.array([len(x) for x in pkX])
+    max_n = max(npeaks)
+    Nimg = len(pkX)
+
+    data_x = np.zeros((Nimg, max_n), dtype=np.float32)
+    data_y = np.zeros_like(data_x)
+    data_I = np.zeros_like(data_x)
+
+    for i in xrange(Nimg):
+        n = npeaks[i]
+        data_x[i, :n] = pkX[i]
+        data_y[i, :n] = pkY[i]
+        data_I[i, :n] = pkI[i]
+
+    peaks = h5.create_group(peaks_path)
+    peaks.create_dataset('nPeaks', data=npeaks)
+    peaks.create_dataset('peakXPosRaw', data=data_x)
+    peaks.create_dataset('peakYPosRaw', data=data_y)
+    peaks.create_dataset('peakTotalIntensity', data=data_I)
