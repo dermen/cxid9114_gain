@@ -9,6 +9,7 @@ from dxtbx.format.FormatStill import FormatStill
 from scitbx import matrix
 from dials.array_family import flex
 
+from cxid9114.geom import geom_utils
 from cxid9114.parameters import WAVELEN_LOW
 from cxid9114.common_mode.pppg import pppg
 
@@ -71,28 +72,31 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
         self._assembler_define()
 
     def _decide_multi_panel(self):
+        """
+        decides whether to use single or multi-panel cspad modes...
+        """
         if "multi_panel" in self._h5_handle.keys():
             self.as_multi_panel = self._h5_handle["multi_panel"][()]
         else:
             self.as_multi_panel = False
 
     def load_dark(self):
-        self.dark = self._h5_handle["pedestal"].value
+        self.dark = self._h5_handle["pedestal"][()]
         assert (self.dark.dtype == np.float64)
 
     def load_gain(self):
-        self.gain = self._h5_handle["panel_gainmasks"].value
+        self.gain = self._h5_handle["panel_gainmasks"][()]
         assert (self.gain.dtype == np.bool)
-        self.gain_val = self._h5_handle["gain_val"].value
+        self.gain_val = self._h5_handle["gain_val"][()]
 
     def load_mask(self):
-        self.mask = self._h5_handle["panel_masks"].value
+        self.mask = self._h5_handle["panel_masks"][()]
         assert (self.mask.dtype == np.bool)
 
     def load_xyz(self):
-        self.panel_X = self._h5_handle["panel_x"].value
-        self.panel_Y = self._h5_handle["panel_y"].value
-        self.panel_Z = self._h5_handle["panel_z"].value
+        self.panel_X = self._h5_handle["panel_x"][()]
+        self.panel_Y = self._h5_handle["panel_y"][()]
+        self.panel_Z = self._h5_handle["panel_z"][()]
 
     def _assembler_define(self):
         if not self.as_multi_panel:
@@ -126,6 +130,11 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
                     IMG_SIZE,
                     trusted_range)
 
+        else:
+            if "psf" not in self._h5_handle.keys():
+                raise ValueError("Need the TJ Lane PSF vectors! psana.Detector(cspad).geometry().get_psf()")
+            self._cctbx_detector = geom_utils.make_dials_cspad(self._h5_handle["psf"][()])
+
         self._cctbx_beam = self._beam_factory.simple(WAVELEN_LOW)
 
     def get_num_images(self):
@@ -149,12 +158,13 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
             self.panel_img = np.ascontiguousarray(self.panel_img)
 
     def get_raw_data(self, index=0):
-        self.panels = self._h5_handle['panels'][index].astype(np.float64)
-        self._correct_panels()
-        if not self.as_multi_panel:
+        self.panels = self._h5_handle['panels'][index].astype(np.float64)  # 32x185x388 psana-style cspad array
+        self._correct_panels()  # applies dark cal, common mode, and gain, in that order..
+        if not self.as_multi_panel:  # is single slab detector
             self._assemble_panels()
             return flex.double(self.panel_img)
-
+        else:  # if multi-panel detector
+            return geom_utils.psana_data_to_aaron64_data(self.panels, as_flex=True)
 
     def _apply_mask(self):
         self.panels *= self.mask
@@ -180,79 +190,6 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
 
     def get_beam(self, index=None):
         return self._cctbx_beam
-
-    #def _detector(self, index=None):
-    #    from xfel.cftbx.detector.cspad_cbf_tbx import read_slac_metrology
-    #    from dxtbx.model import Detector
-    #    from scitbx.matrix import col
-    #    from dxtbx.model import ParallaxCorrectedPxMmStrategy
-    #    from xfel.cxi.cspad_ana.cspad_tbx import env_distance
-    #    if index is None: index = 0
-
-    #    ev = self._get_event(index)
-    #    run_number = ev.run()
-    #    run = self._psana_runs[run_number]
-    #    det = self._psana_det[ run_number]
-    #    geom= det.pyda.geoaccess(run_number)
-    #    cob = read_slac_metrology(geometry=geom, include_asic_offset=True)
-    #    distance = env_distance(self.params.detector_address[0], run.env(), self.params.cspad.detz_offset)
-    #    d = Detector()
-    #    pg0 = d.hierarchy()
-    #    # first deal with D0
-    #    det_num = 0
-    #    origin = col((cob[(0,)] * col((0,0,0,1)))[0:3])
-    #    fast   = col((cob[(0,)] * col((1,0,0,1)))[0:3]) - origin
-    #    slow   = col((cob[(0,)] * col((0,1,0,1)))[0:3]) - origin
-    #    origin += col((0., 0., -distance))
-    #    pg0.set_local_frame(fast.elems,slow.elems,origin.elems)
-    #    pg0.set_name('D%d'%(det_num))
-    #    for quad_num in xrange(4):
-    #      # Now deal with Qx
-    #      pg1 = pg0.add_group()
-    #      origin = col((cob[(0,quad_num)] * col((0,0,0,1)))[0:3])
-    #      fast   = col((cob[(0,quad_num)] * col((1,0,0,1)))[0:3]) - origin
-    #      slow   = col((cob[(0,quad_num)] * col((0,1,0,1)))[0:3]) - origin
-    #      pg1.set_local_frame(fast.elems,slow.elems,origin.elems)
-    #      pg1.set_name('D%dQ%d'%(det_num, quad_num))
-    #      for sensor_num in xrange(8):
-    #      # Now deal with Sy
-    #        pg2=pg1.add_group()
-    #        origin = col((cob[(0,quad_num,sensor_num)] * col((0,0,0,1)))[0:3])
-    #        fast   = col((cob[(0,quad_num,sensor_num)] * col((1,0,0,1)))[0:3]) - origin
-    #        slow   = col((cob[(0,quad_num,sensor_num)] * col((0,1,0,1)))[0:3]) - origin
-    #        pg2.set_local_frame(fast.elems,slow.elems,origin.elems)
-    #        pg2.set_name('D%dQ%dS%d'%(det_num,quad_num,sensor_num))
-    #        # Now deal with Az
-    #        for asic_num in xrange(2):
-    #          val = 'ARRAY_D0Q%dS%dA%d'%(quad_num,sensor_num,asic_num)
-    #          p = pg2.add_panel()
-    #          origin = col((cob[(0,quad_num,sensor_num, asic_num)] * col((0,0,0,1)))[0:3])
-    #          fast   = col((cob[(0,quad_num,sensor_num, asic_num)] * col((1,0,0,1)))[0:3]) - origin
-    #          slow   = col((cob[(0,quad_num,sensor_num, asic_num)] * col((0,1,0,1)))[0:3]) - origin
-    #          p.set_local_frame(fast.elems,slow.elems,origin.elems)
-    #          p.set_pixel_size((cspad_cbf_tbx.pixel_size, cspad_cbf_tbx.pixel_size))
-    #          p.set_image_size(cspad_cbf_tbx.asic_dimension)
-    #          p.set_trusted_range((cspad_tbx.cspad_min_trusted_value, cspad_tbx.cspad_saturated_value))
-    #          p.set_name(val)
-
-    #    try:
-    #      beam = self._beam(index)
-    #    except Exception:
-    #      print('No beam object initialized. Returning CSPAD detector without parallax corrections')
-    #      return d
-
-    #    # take into consideration here the thickness of the sensor also the
-    #    # wavelength of the radiation (which we have in the same file...)
-    #    wavelength = beam.get_wavelength()
-    #    thickness = 0.5 # mm, see Hart et al. 2012
-    #    from cctbx.eltbx import attenuation_coefficient
-    #    table = attenuation_coefficient.get_table("Si")
-    #    # mu_at_angstrom returns cm^-1
-    #    mu = table.mu_at_angstrom(wavelength) / 10.0 # mu: mm^-1
-    #    t0 = thickness
-    #    for panel in d:
-    #      panel.set_px_mm_strategy(ParallaxCorrectedPxMmStrategy(mu, t0))
-    #    return d
 
 if __name__ == '__main__':
     import sys
