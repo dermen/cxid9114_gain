@@ -24,7 +24,7 @@ REQUIRED_KEYS = ['gain_val',
                  'pedestal']
 
 PIXEL_SIZE = 0.10992  # CSPAD pixel size in mm
-CAMERA_LENGTH = 125  # CSPAD sample-to-detector distance
+CAMERA_LENGTH = 124.5  # CSPAD sample-to-detector distance
 IMG_SIZE = (1800, 1800)
 X_OFFSET = 0
 Y_OFFSET = 0
@@ -133,7 +133,9 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
         else:
             if "psf" not in self._h5_handle.keys():
                 raise ValueError("Need the TJ Lane PSF vectors! psana.Detector(cspad).geometry().get_psf()")
-            self._cctbx_detector = geom_utils.make_dials_cspad(self._h5_handle["psf"][()])
+            psf = self._h5_handle["psf"][()]
+            psf[0, :, 2] = -1*CAMERA_LENGTH*1000
+            self._cctbx_detector = geom_utils.make_dials_cspad(psf)
 
         self._cctbx_beam = self._beam_factory.simple(WAVELEN_LOW)
 

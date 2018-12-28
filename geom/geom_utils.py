@@ -29,7 +29,7 @@ def add_asics_to_quad(quad, quad_number, asic_origins, asic_ss, asic_fs):
         fs = asic_fs[i_a]  # asics fast-scan direction
         orig = asic_origins[i_a]  # asics corner from which fs and ss originate
 
-        A.set_local_frame(fs, ss, orig)  # still not sure bout this...
+        A.set_local_frame(tuple(fs), tuple(ss), tuple(orig))  # still not sure bout this...
         A.set_pixel_size((0.10992, 0.10992))  # standard for cspad
         A.set_image_size((194, 185))  # standard for cspad
         A.set_trusted_range((-56, 65000))  # standard for cspad
