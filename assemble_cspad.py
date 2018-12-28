@@ -1,9 +1,10 @@
+import warnings
 import matplotlib as mpl
 import pylab as plt
 import numpy as np
 import sys
 
-def add_asic_to_ax( ax, I, p,fs,ss=None,s="", **kwargs):
+def add_asic_to_ax( ax, I, p,fs, ss=None,s="", **kwargs):
     """
     View along the Z-axis (usually the beam axis) at the detector
 
@@ -25,19 +26,20 @@ def add_asic_to_ax( ax, I, p,fs,ss=None,s="", **kwargs):
         assumed to be perpendicular to fs
     """
     # first get the angle between fast-scan vector and +x axis
-    ang = np.arccos( np.dot( fs , [1,0,0]) /np.linalg.norm(fs) )
+    ang = np.arccos(np.dot(fs, [1, 0, 0]) / np.linalg.norm(fs) )
     ang_deg = ang * 180 / np.pi    
     if fs[0] <= 0 and fs[1] < 0:
         ang_deg = 360 - ang_deg
     elif fs[0] >=0 and fs[1] < 0:
         ang_deg = 360-ang_deg
 
+
     im = ax.imshow(I, 
             extent=(p[0], p[0]+I.shape[1], p[1]-I.shape[0], p[1]), 
             **kwargs)
     
     trans = mpl.transforms.Affine2D().rotate_deg_around( p[0], p[1], ang_deg) + ax.transData
-    _text = ax.text(p[0], p[1],s=s, color='c', transform=ax.transAxes)
+    _text = ax.text(p[0], p[1], s=s, color='c', transform=ax.transAxes)
 
     im.set_transform(trans)
     _text.set_transform(trans)
@@ -58,7 +60,9 @@ def assemble_cspad(panels, PSF, pixsize=109.92, aspect='equal', a=0,b=0,max_dim=
     extent of cspad from 0,0 in either -x,-y,+x,+y, ok to leave as 900 for 32 panel cspad
     vmin,vmax,cmap matplotlib imshow arguments. colorscale-min, colorscale-max and colormap-scheme, respectively
 
-    """ 
+    """
+    if float(mpl.__version__[0]) < 2:
+        warnings.warn("Need version 2+ of matplotlib for this assembler to display correct geometry!")
     P_,S_,F_ = PSF
     P = P_/pixsize
     S = S_/pixsize
