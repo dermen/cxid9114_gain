@@ -32,25 +32,29 @@ if HAS_TWO_COLOR:
     show_hits = False
     INDEXER = two_color_indexer.indexer_two_color
     KNOWN_SYMMETRY = crystal.symmetry("78,78,37,90,90,90","P43212")
-    two_color_indexer.N_UNIQUE_V = 20
+    two_color_indexer.N_UNIQUE_V = 30
 
     params.refinement.parameterisation.beam.fix = "all"
     params.refinement.parameterisation.detector.fix = "all"
     params.indexing.known_symmetry.space_group = KNOWN_SYMMETRY.space_group_info()
     params.refinement.verbosity = 3
-# params.indexing.refinement_protocol.d_min_start
+    params.indexing.refinement_protocol.d_min_start = 3
     params.indexing.known_symmetry.unit_cell = KNOWN_SYMMETRY.unit_cell()
-    params.indexing.debug = True
-    params.indexing.real_space_grid_search.characteristic_grid = 0.029
-# params.indexing.stills.refine_all_candidates = False
+    params.indexing.debug =True
+    params.indexing.real_space_grid_search.characteristic_grid = 0.02
     params.indexing.known_symmetry.absolute_angle_tolerance = 5.0
     params.indexing.known_symmetry.relative_length_tolerance = 0.3
     params.indexing.two_color.high_energy = parameters.ENERGY_HIGH
     params.indexing.two_color.low_energy = parameters.ENERGY_LOW
     params.indexing.two_color.avg_energy = parameters.ENERGY_LOW * .5 + parameters.ENERGY_HIGH * .5
+    params.indexing.stills.refine_all_candidates = False
+    params.indexing.stills.refine_candidates_with_known_symmetry = True
     params.indexing.stills.rmsd_min_px = 3.5
+    params.indexing.refinement_protocol.mode = "repredict_only"
     params.indexing.refinement_protocol.n_macro_cycles = 1
-    params.indexing.multiple_lattice_search.max_lattices = 100
+    params.indexing.multiple_lattice_search.max_lattices = 1
+    params.indexing.basis_vector_combinations.max_refine = 10000000000
+    #params.indexing.basis_vector_combinations.max_combinations = 150
 # ====================================================================
 
     BEAM_LOW = BeamFactory.simple_directional((0, 0, 1), parameters.WAVELEN_LOW)
@@ -80,7 +84,7 @@ if __name__ == "__main__":
     n_indexed = 0
     idx_indexed = []
     print('Iterating over {:d} hits'.format(Nhits))
-    for i_hit in range( Nhits):
+    for i_hit in range(Nhits):
         shot_idx = idx[where_hits[i_hit]]
         if show_hits:
             loader.show_data(shot_idx)
@@ -88,18 +92,18 @@ if __name__ == "__main__":
         hit_imgset.set_beam(BEAM_LOW)
         hit_refl = refl_select.select(shot_idx)
 
-        print '\rIndexing shot {:d} (Hit {:d}/{:d}) using {:d} spots' \
+        print 'Indexing shot {:d} (Hit {:d}/{:d}) using {:d} spots' \
             .format(shot_idx, i_hit+1, Nhits, len(hit_refl)),
-        sys.stdout.flush()
         orient = INDEXER(reflections=hit_refl, imagesets=[hit_imgset], params=params)
         try:
             orient.index()
             n_indexed += 1
             idx_indexed.append( i_hit)
         except Sorry, RunTimeError:
+        #except:
             print("Could not index")
             pass
         print ("Indexed %d / %d hits"%(n_indexed, Nhits))
     print ("Indexed %d / %d hits"%(n_indexed, Nhits))
 
-    print  idx_indexed
+    print idx_indexed
