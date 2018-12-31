@@ -2,7 +2,11 @@ from __future__ import absolute_import, division
 
 import h5py
 import numpy as np
-
+try:
+    import pylab as plt
+    CAN_PLOT = True
+except ImportError:
+    CAN_PLOT = False
 from dxtbx.format.Format import Format
 from dxtbx.format.FormatHDF5 import FormatHDF5
 from dxtbx.format.FormatStill import FormatStill
@@ -41,7 +45,6 @@ PPPG_ARGS = {'Nhigh': 100.0,
              'polyorder': 3,
              'verbose': False,
              'window_length': 51}
-
 
 class FormatHDF5D9114(FormatHDF5, FormatStill):
     """
@@ -150,6 +153,15 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
                 bins=self.hist_args["bins"],
                 weights=panels.ravel())[0]
 
+    def show_image(self, index, **kwargs):
+        self._correct_raw_data(index)
+        img2d = self.assemble(self.panels)
+        if CAN_PLOT:
+            plt.figure()
+            plt.imshow(img2d, **kwargs)
+            plt.show()
+        else:
+            print("Cannot plot")
     def _assemble_panels(self):
         if not self.as_multi_panel:
             self.panel_img = np.histogram2d(
@@ -159,9 +171,12 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
                 weights=self.panels.ravel())[0]
             self.panel_img = np.ascontiguousarray(self.panel_img)
 
-    def get_raw_data(self, index=0):
+    def _correct_raw_data(self, index):
         self.panels = self._h5_handle['panels'][index].astype(np.float64)  # 32x185x388 psana-style cspad array
         self._correct_panels()  # applies dark cal, common mode, and gain, in that order..
+
+    def get_raw_data(self, index=0):
+        self._correct_raw_data(index)
         if not self.as_multi_panel:  # is single slab detector
             self._assemble_panels()
             return flex.double(self.panel_img)

@@ -50,7 +50,7 @@ if HAS_TWO_COLOR:
     params.indexing.stills.refine_all_candidates = False
     params.indexing.stills.refine_candidates_with_known_symmetry = True
     params.indexing.stills.rmsd_min_px = 3.5
-    params.indexing.refinement_protocol.mode = "repredict_only"
+    params.indexing.refinement_protocol.mode = "ignore"
     params.indexing.refinement_protocol.n_macro_cycles = 1
     params.indexing.multiple_lattice_search.max_lattices = 1
     params.indexing.basis_vector_combinations.max_refine = 10000000000
@@ -61,6 +61,7 @@ if HAS_TWO_COLOR:
     BEAM_HIGH = BeamFactory.simple_directional((0, 0, 1), parameters.WAVELEN_HIGH)
 
 if __name__ == "__main__":
+    show_hits = False
     if not HAS_TWO_COLOR:
         print("Need to install the module cxi_xdr_xes")
         sys.exit()
@@ -83,8 +84,12 @@ if __name__ == "__main__":
 
     n_indexed = 0
     idx_indexed = []
+    idx_cryst = []
+    Nprocess = 1
     print('Iterating over {:d} hits'.format(Nhits))
     for i_hit in range(Nhits):
+        if i_hit == Nprocess:
+            break
         shot_idx = idx[where_hits[i_hit]]
         if show_hits:
             loader.show_data(shot_idx)
@@ -98,12 +103,19 @@ if __name__ == "__main__":
         try:
             orient.index()
             n_indexed += 1
-            idx_indexed.append( i_hit)
+            idx_indexed.append(i_hit)
+            crystals = [o.crystal for o in orient.refined_experiments]
+            c1 = crystals[0]
+            for c in crystals:
+                assert(c == c1)
+            idx_cryst.append(c1)
         except Sorry, RunTimeError:
-        #except:
             print("Could not index")
             pass
-        print ("Indexed %d / %d hits"%(n_indexed, Nhits))
-    print ("Indexed %d / %d hits"%(n_indexed, Nhits))
+        print ("Indexed %d / %d hits" % (n_indexed, Nhits))
+    print ("Indexed %d / %d hits" % (n_indexed, Nhits))
 
     print idx_indexed
+    from IPython import embed
+    embed()
+
