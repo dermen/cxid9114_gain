@@ -84,8 +84,8 @@ if __name__ == "__main__":
 
     n_indexed = 0
     idx_indexed = []
-    idx_cryst = []
-    Nprocess = 1
+    idx_cryst = {}
+    Nprocess = -1
     print('Iterating over {:d} hits'.format(Nhits))
     for i_hit in range(Nhits):
         if i_hit == Nprocess:
@@ -108,14 +108,18 @@ if __name__ == "__main__":
             c1 = crystals[0]
             for c in crystals:
                 assert(c == c1)
-            idx_cryst.append(c1)
+            idx_cryst[i_hit] = {}
+            idx_cryst[i_hit]["crystal"] = c1
+            idx_cryst[i_hit]["refl"] = hit_refl
         except Sorry, RunTimeError:
             print("Could not index")
             pass
         print ("Indexed %d / %d hits" % (n_indexed, Nhits))
     print ("Indexed %d / %d hits" % (n_indexed, Nhits))
 
-    print idx_indexed
-    from IPython import embed
-    embed()
+    with open("run62_idx.pkl","w") as o:
+        cPickle.dump(idx_cryst, o)
+    #print idx_indexed
+    #from IPython import embed
+    #embed()
 
