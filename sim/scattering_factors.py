@@ -8,22 +8,15 @@ from cctbx.eltbx import henke
 from dials.array_family import flex  # needed for pickle
 
 fcalc_file = "fcalc_at_wave.pkl"
-pdb_name = "4bs7.pdb"
-
-# load the PDB as text file to pass to iotbx later
-lines = open(pdb_name,"r").readlines()
 
 interp_energies = np.hstack((
             np.linspace(8940, 8952, 25),
             np.linspace(9030, 9038, 25)
             ))
+
 wavelens_A = 1e10 * constants.h * constants.c/ \
              (constants.electron_volt* interp_energies)
 
-scatt_param = {
-    'd_min': 1.5,  # found these in an example
-    'anomalous_flag': True,
-    'algorithm': 'direct'}
 
 def get_scattF(wavelen_A, **kwargs):
     """
@@ -42,7 +35,17 @@ def get_scattF(wavelen_A, **kwargs):
 
 # this part is slow, but done once
 def main(wavelens_A, wavelen_idx, jid):
+
+    pdb_name = "4bs7.pdb"  # this has the heavy atom replacement
+    lines = open(pdb_name, "r").readlines()
+
+    scatt_param = {
+        'd_min': 1.5,  # found these in an example
+        'anomalous_flag': True,
+        'algorithm': 'direct'}
+
     fcalc_at_wavelen = {}
+
     for i_wave in wavelen_idx:
         waveA = wavelens_A[i_wave]
         print("Job %d;  Computing scattering at wavelen %.4f ( %d/ %d )" \
