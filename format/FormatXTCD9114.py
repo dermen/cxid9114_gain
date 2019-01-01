@@ -1,7 +1,11 @@
 from __future__ import absolute_import, division, print_function
 
 import numpy as np
-import psana
+try:
+    import psana
+    HAS_PANA = True
+except ImportError:
+    HAS_PSANA = False
 try:
     import pylab as plt
     CAN_PLOT = True
