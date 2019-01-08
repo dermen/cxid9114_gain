@@ -1,9 +1,15 @@
-import numpy as np
-import cPickle
+import bisect
 import os
+import cPickle
+import numpy as np
+import h5py
 from dials.array_family import flex
 
-
+try:
+    import psana
+    has_psana = True
+except ImportError:
+    has_psana=False
 
 def psana_mask_to_aaron64_mask(mask_32panels, pickle_name, force=False):
     """
@@ -136,3 +142,59 @@ def write_cxi_peaks(h5, peaks_path, pkX, pkY, pkI):
     peaks.create_dataset('peakXPosRaw', data=data_x)
     peaks.create_dataset('peakYPosRaw', data=data_y)
     peaks.create_dataset('peakTotalIntensity', data=data_I)
+
+
+def make_event_time(sec, nanosec, fid):
+    if not has_psana:
+        print("No psana")
+        return
+    time = int((sec<<32)|nanosec)
+    et = psana.EventTime(time, fid)
+    return time, et
+
+
+class GetSpectrum:
+    """
+    The spectrum data is processed separately and stored in
+    hdf5 files where there is one spectrum per event time
+
+    Then, when we process the CSPAD images we keep a copy of each
+    CSPAD images event time, and this class is designed to retrieve
+    the spectrum from the hdf5 file for a given event time
+    """
+    def __init__(self,
+               spec_file="/home/dermen/cxid9114/spec_trace/traces.62.h5",
+               spec_file_times="event_time",
+               spec_file_data="line_mn",
+               spec_is_1d = True):
+        """
+        :param spec_file:  path to the spectrum file which contans data and event times
+        :param spec_file_times: dataset path of the times in the hdf5 file
+        :param spec_file_data: dataset path of the spectrum data in the hdf5 file
+        :param spec_is_1d: is the spectrum data 1d? If not process it as if it were 2d
+        """
+        self._f = h5py.File(spec_file, 'r')
+        times = self._f[spec_file_times][()]
+        self.spec_traces = self._f[spec_file_data]
+        self.order = times.argsort()
+        self.spec_sorted_times = times[self.order]
+        self.spec_is_1d = spec_is_1d
+
+    def get_spec(self, time):
+        """
+        Retrieve the spectrum!
+        :param time: psana event time combo of sec and nanosec
+        :return: the spectrum data if found, else None
+        """
+        if time not in self.spec_sorted_times:
+            print "No spectrum for given time %d" % time
+            return None
+        sorted_pos = bisect.bisect_left(self.spec_sorted_times, time)
+        trace_idx = self.order[sorted_pos]
+        data = self.spec_traces[trace_idx]
+
+        if self.spec_is_1d:
+            return data
+        else:
+            return self.project_fee_img(data)
+
