@@ -1,53 +1,123 @@
+import os, inspect
 import numpy as np
-import cPickle
+import pylab as plt
+cwd = os.path.dirname(os.path.abspath(inspect.getsourcefile(lambda:0)))
 
+from scitbx.matrix import sqr
 from cxid9114.sim import sim_utils
 from cxid9114.sim import scattering_factors
-
+from cxid9114 import utils
 from simtbx.nanoBragg import nanoBragg
 from simtbx.nanoBragg import shapetype
 from simtbx_nanoBragg_ext import convention
-from dials.array_family import flex
+
+cryst_f = os.path.join(cwd,"c1.pkl")
+det_f = os.path.join( cwd, "test_det.pkl")
+beam_f = os.path.join( cwd, "test_beam.pkl")
 
 
-crystal = cPickle.load(open("c1.pkl","r"))
-beam = cPickle.load(open("test_beam.pkl", "r"))
-detector = cPickle.load(open("test_det.pkl", "r"))
-spectrum = np.load("spec_trace_mean.npy")
+class PatternFactory:
 
-# =============================================
-# Define the simulator here
-SIM2 = nanoBragg(detector, beam, verbose=7)
-SIM2.beamcenter_convention = convention.DIALS
-SIM2.oversample = 1  # oversamples the pixel ?
-SIM2.polarization = 1  # polarization fraction ?
-SIM2.F000 = 200  # should be number of electrons ?
-SIM2.default_F = 0
-SIM2.Amatrix = sim_utils.Amatrix_dials2nanoBragg(crystal)
-SIM2.xtal_shape = shapetype.Tophat
-SIM2.progress_meter = False
-SIM2.flux = 1e14
-SIM2.beamsize_mm = 0.004
-SIM2.Ncells_abc = (10, 10, 10,)
-# SIM2.xtal_size_mm = (5e-5, 5e-5, 5e-5)
-SIM2.interpolate = 0
-SIM2.mosaic_domains = 25  # from LS49
-SIM2.mosaic_spread_deg = 0.05  # from LS49
-SIM2.progress_meter = False
-SIM2.set_mosaic_blocks(sim_utils.mosaic_blocks(SIM2.mosaic_spread_deg,
-                                               SIM2.mosaic_domains))
+    def __init__(self, crystal=None, detector=None, beam=None):
+        """
+        :param crystal:  dials crystal model
+        :param detector:  dials detector model
+        :param beam: dials beam model
+        """
+        self.beam = beam
+        self.detector = detector
+        if crystal is None:
+            crystal = utils.open_flex(cryst_f)
+        if self.detector is None:
+            self.detector = utils.open_flex(det_f)
+        if self.beam is None:
+            self.beam = utils.open_flex(beam_f)
 
-# ===========================================
+        self.SIM2 = nanoBragg( self.detector, self.beam, verbose=10)
+        self.SIM2.beamcenter_convention = convention.DIALS
+        self.SIM2.oversample = 1  # oversamples the pixel ?
+        self.SIM2.polarization = 1  # polarization fraction ?
+        self.SIM2.F000 = 200  # should be number of electrons ?
+        self.SIM2.default_F = 0
+        self.SIM2.Amatrix = sim_utils.Amatrix_dials2nanoBragg(crystal)  # sets the unit cell
+        self.SIM2.xtal_shape = shapetype.Tophat
+        self.SIM2.progress_meter = False
+        self.SIM2.flux = 1e14
+        self.SIM2.beamsize_mm = 0.004
+        self.SIM2.Ncells_abc = (10, 10, 10)
+        self.SIM2.interpolate = 0
+        self.SIM2.progress_meter = False
+        self.SIM2.verbose = 0
 
-# downsample the provided spectrum
-new_spec = sim_utils.interp_spectrum(spectrum,
-                                     sim_utils.ENERGY_CAL,
-                                     scattering_factors.interp_energies)
-# assume all flux into this spectrum
-flux_per_en = new_spec / np.sum(new_spec) * SIM2.flux
+    def make_pattern(self, crystal, spectrum, show_spectrum=False,
+                     mosaic_domains=5,
+                     mosaic_spread=0.1):
+        """
+        :param crystal:  cctbx crystal
+        :param spectrum: np.array of shape 1024
+        :return: simulated pattern
+        """
+        if spectrum.shape[0] != 1024:
+            raise ValueError("Spectrum needs to have length 1024 in current version")
 
-from IPython import embed
-embed()
-#full_pattern = sim_utils.simSIM(SIM2)
+        # downsample the provided spectrum
+        new_spec = sim_utils.interp_spectrum(spectrum,
+                                             sim_utils.ENERGY_CAL,
+                                             scattering_factors.interp_energies)
 
+        if show_spectrum:
+            plt.plot(scattering_factors.interp_energies, new_spec, 'o')
+            plt.show()
 
+        # assume all flux passes into this spectrum
+        flux_per_en = new_spec / np.sum(new_spec) * self.SIM2.flux
+
+        # set mosaicity
+        self.SIM2.mosaic_domains = mosaic_domains  # from LS49
+        self.SIM2.mosaic_spread_deg = mosaic_spread  # from LS49
+        self.SIM2.set_mosaic_blocks(sim_utils.mosaic_blocks(self.SIM2.mosaic_spread_deg,
+                                                            self.SIM2.mosaic_domains))
+        pattern = sim_utils.simSIM(self.SIM2,
+            ener_eV = scattering_factors.interp_energies,
+            flux_per_en = flux_per_en,
+            fcalcs = scattering_factors.fcalc_at_wavelen,
+            Amatrix = sim_utils.Amatrix_dials2nanoBragg(crystal))
+        return pattern
+
+    def make_pattern2(self, crystal, flux_per_en, energies_eV, fcalcs_at_energies,
+                      mosaic_domains=2, mosaic_spread=0.1,ret_sum=True, Op=None):
+        """
+        :param crystal:
+        :param flux_per_en:
+        :param energies_eV:
+        :param fcalcs_at_energies:
+        :param mosaic_domains:
+        :param mosaic_spread:
+        :param ret_sum:
+        :param Op:
+        :return:
+        """
+        # set mosaicity
+        self.SIM2.mosaic_domains = mosaic_domains  # from LS49
+        self.SIM2.mosaic_spread_deg = mosaic_spread  # from LS49
+        self.SIM2.set_mosaic_blocks(sim_utils.mosaic_blocks(self.SIM2.mosaic_spread_deg,
+                                                            self.SIM2.mosaic_domains))
+        if Op is not None:
+            print("RotSpec!")
+            A = sqr(crystal.get_A())
+            Acell = A.inverse()
+            #a,b,c,_,_,_ = crystal.get_unit_cell().parameters()
+            #Umat = sqr((a, 0, 0, 0, b, 0, 0, 0, c))
+            #Miss = Acell * Umat.inverse()
+            Acell2 = Op*Acell
+            #A = Op * A
+            A2 = Acell2.inverse()
+            crystal.set_A(A2)
+
+        pattern = sim_utils.simSIM(self.SIM2,
+                                   ener_eV = energies_eV,
+                                   flux_per_en = flux_per_en,
+                                   fcalcs = fcalcs_at_energies,
+                                   Amatrix = sim_utils.Amatrix_dials2nanoBragg(crystal),
+                                   ret_sum=ret_sum)
+        return pattern

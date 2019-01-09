@@ -1,13 +1,15 @@
 from joblib import Parallel, delayed, effective_n_jobs
 import os
 import numpy as np
-import cPickle
 from scipy import constants
 import iotbx
 from cctbx.eltbx import henke
-from dials.array_family import flex  # needed for pickle
+import inspect
+from cxid9114 import utils
 
-fcalc_file = "fcalc_at_wave.pkl"
+
+cwd = os.path.dirname(os.path.abspath(inspect.getsourcefile(lambda:0)))
+fcalc_file = os.path.join(cwd, "fcalc_at_wave.pkl")
 
 interp_energies = np.hstack((
             np.linspace(8940, 8952, 25),
@@ -65,4 +67,4 @@ if fcalc_file is None or not os.path.exists(fcalc_file):
             fcalc_at_wavelen.setdefault(k, []).append(v)
             fcalc_at_wavelen[k] = fcalc_at_wavelen[k][0]
 else:
-    fcalc_at_wavelen = cPickle.load(open(fcalc_file,"r"))
+    fcalc_at_wavelen = utils.open_flex(fcalc_file)

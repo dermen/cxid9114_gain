@@ -22,13 +22,11 @@ from cxid9114.spots import count_spots
 from cxid9114 import parameters
 from libtbx.utils import Sorry
 
-import stackimpact
-
-agent = stackimpact.start(
-    agent_key = 'agent key here',
-    app_name = 'MyPythonApp')
-
-agent.start_allocation_profiler()
+#import stackimpact
+#agent = stackimpact.start(
+#    agent_key = 'agent key here',
+#    app_name = 'MyPythonApp')
+#agent.start_allocation_profiler()
 
 if HAS_TWO_COLOR:
     indexer_phil_scope.adopt_scope(two_color_phil_scope)
@@ -40,7 +38,7 @@ if HAS_TWO_COLOR:
     show_hits = False
     INDEXER = two_color_indexer.indexer_two_color
     KNOWN_SYMMETRY = crystal.symmetry("79.1,79.1,38.4,90,90,90", "P43212")
-    two_color_indexer.N_UNIQUE_V = 25
+    two_color_indexer.N_UNIQUE_V = 30
 
     params.refinement.parameterisation.beam.fix = "all"
     params.refinement.parameterisation.detector.fix = "all"
@@ -97,7 +95,7 @@ if __name__ == "__main__":
     n_indexed = 0
     idx_indexed = []
     idx_cryst = {}
-    Nprocess = -1
+    Nprocess = -2
     print('Iterating over {:d} hits'.format(Nhits))
     for i_hit in range(Nhits):
         if i_hit == Nprocess:
@@ -111,7 +109,8 @@ if __name__ == "__main__":
 
         print 'Indexing shot {:d} (Hit {:d}/{:d}) using {:d} spots' \
             .format(shot_idx, i_hit+1, Nhits, len(hit_refl)),
-
+        from IPython import embed
+        embed()
         orient = INDEXER(reflections=hit_refl, imagesets=[hit_imgset], params=params)
 
         try:
@@ -122,10 +121,14 @@ if __name__ == "__main__":
             #c1 = crystals[0]
             #for c in crystals:
             #    assert(c == c1)
-            idx_cryst[i_hit] = {}
-            idx_cryst[i_hit]["crystals"] = crystals
-            idx_cryst[i_hit]["refl"] = hit_refl
-            idx_cryst[i_hit]["refined_refl"] = orient.refined_reflections
+            idx_cryst[shot_idx] = {}
+            idx_cryst[shot_idx]["crystals"] = crystals
+            idx_cryst[shot_idx]["refl"] = hit_refl
+            embed()
+            idx_cryst[shot_idx]["best"] = orient.best_rmsd
+            #idx_cryst[shot_idx]["experiments"] = orient.refined_experiments
+            orient.export_as_json(orient.refined_experiments,
+                                  file_name="shot%d.json" % shot_idx)
         except Sorry, RunTimeError:
             print("Could not index")
             pass
@@ -133,10 +136,8 @@ if __name__ == "__main__":
         print ("Indexed %d / %d hits" % (n_indexed, Nhits))
     print ("Indexed %d / %d hits" % (n_indexed, Nhits))
 
-    with open("backup.pkl", "w") as o:
-        cPickle.dump(idx_cryst, o)
     with open("run62_idx_%dprocessed.pkl" % Nprocess, "w") as o:
         cPickle.dump(idx_cryst, o)
     #print idx_indexed
 
-agent.stop_allocation_profiler()
+#agent.stop_allocation_profiler()

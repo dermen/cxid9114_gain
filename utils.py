@@ -4,12 +4,20 @@ import cPickle
 import numpy as np
 import h5py
 from dials.array_family import flex
+from cxid9114.spots import count_spots, spot_utils
 
 try:
     import psana
     has_psana = True
 except ImportError:
     has_psana=False
+
+
+def open_flex(filename):
+    """unpickle the flex file which requires flex import"""
+    with open(filename, "r") as f:
+        data = cPickle.load(f)
+    return data
 
 def psana_mask_to_aaron64_mask(mask_32panels, pickle_name, force=False):
     """
@@ -123,13 +131,14 @@ def write_cxi_peaks(h5, peaks_path, pkX, pkY, pkI):
     :param pkY: Y-coordinate of peaks (list of lists like pkX)
     :param pkI: Intensity of peaks (list of float
     """
+    import numpy as np
     npeaks = np.array([len(x) for x in pkX])
     max_n = max(npeaks)
     Nimg = len(pkX)
 
     data_x = np.zeros((Nimg, max_n), dtype=np.float32)
-    data_y = np.zeros_like(data_x)
     data_I = np.zeros_like(data_x)
+    data_y = np.zeros_like(data_x)
 
     for i in xrange(Nimg):
         n = npeaks[i]
@@ -195,6 +204,27 @@ class GetSpectrum:
 
         if self.spec_is_1d:
             return data
-        else:
-            return self.project_fee_img(data)
+        #else:
+        #    return self.project_fee_img(data)
 
+def images_and_refls_to_simview(prefix, imgs, refls):
+
+    refls_concat = spot_utils.combine_refls(refls)
+    refl_info = count_spots.group_refl_by_shotID(refls_concat)
+    refl_shotIds = refl_info.keys()
+    Nrefl = len( refl_shotIds)
+    Nimg = len( imgs)
+    assert(Nimg==Nrefl)
+    assert( all([ i in range(Nrefl) for i in refl_shotIds]))
+
+    with open("%s_strong.pkl" % prefix, "w") as strong_f:
+        cPickle.dump(refls_concat, strong_f)
+        print "Wrote %s" % strong_f.name
+
+    with h5py.File( "%s.h5" % prefix, "w") as img_f:
+        for i_img in range(Nimg):
+            if imgs[i].dtype != np.float32:
+                imgs[i] = imgs[i].astype(np.float32)
+        img_f.create_dataset("simulated_d9114_images",
+                             data=imgs)
+        print "Wrote %s" % img_f.filename
