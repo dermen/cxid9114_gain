@@ -35,12 +35,13 @@ class PatternFactory:
 
         self.SIM2 = nanoBragg( self.detector, self.beam, verbose=10)
         self.SIM2.beamcenter_convention = convention.DIALS
-        self.SIM2.oversample = 1  # oversamples the pixel ?
+        self.SIM2.oversample = 2  # oversamples the pixel ?
         self.SIM2.polarization = 1  # polarization fraction ?
-        self.SIM2.F000 = 200  # should be number of electrons ?
+        self.SIM2.F000 = 10  # should be number of electrons ?
         self.SIM2.default_F = 0
         self.SIM2.Amatrix = sim_utils.Amatrix_dials2nanoBragg(crystal)  # sets the unit cell
         self.SIM2.xtal_shape = shapetype.Tophat
+        #self.SIM2.xtal_shape = shapetype.Gauss
         self.SIM2.progress_meter = False
         self.SIM2.flux = 1e14
         self.SIM2.beamsize_mm = 0.004
@@ -84,8 +85,18 @@ class PatternFactory:
             Amatrix = sim_utils.Amatrix_dials2nanoBragg(crystal))
         return pattern
 
+    def adjust_mosaicity(self, mosaic_domains=None, mosaic_spread=None):
+        if mosaic_domains is None:
+            mosaic_domains = 2  # default
+        if mosaic_spread is None:
+            mosaic_spread = 0.1
+        self.SIM2.mosaic_domains = mosaic_domains  # from LS49
+        self.SIM2.mosaic_spread_deg = mosaic_spread  # from LS49
+        self.SIM2.set_mosaic_blocks(sim_utils.mosaic_blocks(self.SIM2.mosaic_spread_deg,
+                                                            self.SIM2.mosaic_domains))
+
     def make_pattern2(self, crystal, flux_per_en, energies_eV, fcalcs_at_energies,
-                      mosaic_domains=2, mosaic_spread=0.1,ret_sum=True, Op=None):
+                      mosaic_domains=None, mosaic_spread=None,ret_sum=True, Op=None):
         """
         :param crystal:
         :param flux_per_en:
@@ -98,21 +109,18 @@ class PatternFactory:
         :return:
         """
         # set mosaicity
-        self.SIM2.mosaic_domains = mosaic_domains  # from LS49
-        self.SIM2.mosaic_spread_deg = mosaic_spread  # from LS49
-        self.SIM2.set_mosaic_blocks(sim_utils.mosaic_blocks(self.SIM2.mosaic_spread_deg,
-                                                            self.SIM2.mosaic_domains))
+        if mosaic_domains is not None or mosaic_spread is not None:
+            self.adjust_mosaicity(mosaic_domains, mosaic_spread)
         if Op is not None:
-            print("RotSpec!")
-            A = sqr(crystal.get_A())
-            Acell = A.inverse()
-            #a,b,c,_,_,_ = crystal.get_unit_cell().parameters()
-            #Umat = sqr((a, 0, 0, 0, b, 0, 0, 0, c))
-            #Miss = Acell * Umat.inverse()
-            Acell2 = Op*Acell
-            #A = Op * A
-            A2 = Acell2.inverse()
-            crystal.set_A(A2)
+            print("Rots!!")
+            p_init = crystal.get_unit_cell().parameters()
+            Arot = Op * sqr(crystal.get_U()) * sqr(crystal.get_B())
+            crystal.set_A(Arot)
+            p_final = crystal.get_unit_cell().parameters()
+            if not np.allclose( p_init, p_final):
+                print "Trying to use matrix Op:"
+                print Op
+                raise ValueError("Matrix Op is not proper rotation!")
 
         pattern = sim_utils.simSIM(self.SIM2,
                                    ener_eV = energies_eV,

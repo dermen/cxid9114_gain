@@ -2,11 +2,12 @@ import os, sys
 from scipy.interpolate import interp1d
 import numpy as np
 import inspect
-
+from cxid9114 import utils
 from simtbx.nanoBragg import nanoBragg
 from dials.array_family import flex
 import scitbx
 from scitbx.matrix import col
+import cPickle
 
 try:
     from joblib import effective_n_jobs, Parallel, delayed
@@ -20,7 +21,6 @@ cwd = os.path.dirname(os.path.abspath(inspect.getsourcefile(lambda:0)))
 energy_file = os.path.join(cwd, "energy_cal_r62.npy")
 ENERGY_CAL = np.load(energy_file)
 
-
 def energy_cal():
     """
     loads the energy calibration (energy per pixel in the spectrometer)
@@ -28,6 +28,19 @@ def energy_cal():
     """
     energy_cal = np.load(energy_file)
     return energy_cal
+
+def load_fcalc_file(fcalc_file):
+    fcalcs_data = utils.open_flex(fcalc_file)
+    fcalcs_at_en = fcalcs_data["fcalc"]
+    energies = fcalcs_data["energy"]
+    return energies, fcalcs_at_en
+
+def save_fcalc_file(energies, fcalcs_at_en, filename):
+    fcalc_data = {}
+    fcalc_data["energy"] = energies
+    fcalc_data["fcalc"] = fcalcs_at_en
+    with open(filename, "w") as ff:
+        cPickle.dump( fcalc_data, ff)
 
 def mosaic_blocks(mos_spread_deg, mos_domains,
                   twister_seed=0, random_seed=1234):
@@ -61,8 +74,6 @@ def interp_spectrum(spectrum, energies, new_energies):
     new_energies, np.ndarray
         evaluate spectrum at these energies
     """
-    bad = is_outlier( spectrum, 6)
-    spectrum[ bad] = 0
     I = interp1d(energies, spectrum, bounds_error=False)
     new_spec = I(new_energies)
     if np.any(np.isnan( new_spec)):
@@ -133,9 +144,9 @@ def simSIM(SIM=None, ener_eV=None, flux_per_en=None,
         print "\rsim spots %d / %d" % (i_ener+1, n_ener),
         sys.stdout.flush()
         SIM.wavelength_A = parameters.ENERGY_CONV / ener_eV[i_ener]
-        print "%0.4f, %0.4f" % (SIM.energy_eV, SIM.wavelength_A)
         SIM.flux = flux_per_en[i_ener]
         if SIM.flux > 0:
+            print "%0.4f, %0.4f" % (SIM.energy_eV, SIM.wavelength_A)
             SIM.Fhkl = fcalcs[i_ener].amplitudes()
             SIM.Amatrix = Amatrix
             SIM.add_nanoBragg_spots()

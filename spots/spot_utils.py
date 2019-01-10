@@ -1,5 +1,19 @@
 from dials.array_family import flex
 from copy import deepcopy
+import numpy as np
+
+def strong_spot_mask(refl_tbl, img_size):
+    Nrefl = len( refl_tbl)
+    masks = [ refl_tbl[i]['shoebox'].mask.as_numpy_array()
+              for i in range(Nrefl)]
+    x1, x2, y1, y2, z1, z2 = zip(*[refl_tbl[i]['shoebox'].bbox
+                                   for i in range(Nrefl)])
+    spot_mask = np.zeros(img_size, bool)
+    for i1, i2, j1, j2, M in zip(x1, x2, y1, y2, masks):
+        slcX = slice(i1, i2, 1)
+        slcY = slice(j1, j2, 1)
+        spot_mask[slcY, slcX] = M == 5
+    return spot_mask
 
 def combine_refls(refl_tbl_lst):
     """
