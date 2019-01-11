@@ -10,7 +10,7 @@ from scitbx.matrix import col
 #from dxtbx.model import DetectorFactory
 #from dxtbx.model import CrystalFactory
 #from dxtbx.model import BeamFactory
-from cxid9114.sim.sim_crystal import PatternFactory
+from cxid9114.sim.sim_utilst import PatternFactory
 from cxid9114.sim import scattering_factors
 from cxid9114 import parameters
 from copy import deepcopy
@@ -100,6 +100,9 @@ for h in hits_idx:
     # above 0 and best is small between 0 and 3
     print h, rmsd_score, max( spec)
 
+
+
+
 # initialize the pattern simulato
 Patts = PatternFactory()
 Patts.adjust_mosaicity(mosaic_domains=2, mosaic_spread=0.05)
@@ -158,7 +161,6 @@ if make_output:
     #os.system("dials.image_viewer %s %s" % \
     #          (output_pref+".h5", output_pref+"_strong.pkl"))
 
-from scitbx.matrix import sqr
 x = col((1.,0.,0.))
 y = col((0.,1.,0.))
 z = col((0.,0.,1.))
@@ -167,7 +169,7 @@ yRot = y.axis_and_angle_as_r3_rotation_matrix
 zRot = z.axis_and_angle_as_r3_rotation_matrix
 degs = np.linspace(-5.,5.,50)  # not sure here..
 degs = np.arange( -0.2, 0.2, 0.025)  # still not sure about ranges here.
-degs = np.arange( -0.4, 0.4, 0.025)  # feeling more confident about this range
+degs = np.arange( -0.4, 0.4, 0.05)  # feeling more confident about this range
 rotXY_series = [ (xRot(i, deg=True), yRot(j, deg=True)) for i in degs for j in degs]
 
 
@@ -304,27 +306,26 @@ def save_results(data_img, crystal, refl, fcalc_file, Xang, Yang, filename):
     utils.images_and_refls_to_simview(filename, imgs, refls)
 
 
-def xyscan(crystal_file, fcalcs_file, fracA, fracB, refl_file, rotxy_series):
+def xyscan(crystal, fcalcs_data, fracA, fracB, strong, rotxy_series, jid):
     """
-
     :param crystal_file:
     :param energies:
     :param fcalcs_at_en:
     :param fracA:
-    :param fracB:
+    :param fracB
     :param refl_file:
     :param rotxy_series:
     :return:
     """
-    crystal = utils.open_flex(crystal_file)
-    strong_spots = utils.open_flex(refl_file)
-    energies, fcalcs_at_en = sim_utils.load_fcalc_file(fcalcs_file)
+    #crystal = utils.open_flex(crystal_file)
+    #strong_spots = utils.open_flex(refl_file)
+    energies, fcalcs_at_en = fcalcs_data['energy'], fcalcs_data["fcalc"]
     Patts = PatternFactory()
     Patts.adjust_mosaicity(2, 0.05)  # defaults
     flux_per_en = [fracA*1e14, fracB*1e14]
 
     img_size = Patts.detector.to_dict()['panels'][0]['image_size']
-    found_spot_mask = spot_utils.strong_spot_mask(strong_spots, img_size)
+    found_spot_mask = spot_utils.strong_spot_mask(strong, img_size)
 
     overlaps = []
     for rX, rY in rotxy_series:
@@ -337,12 +338,12 @@ def xyscan(crystal_file, fcalcs_file, fracA, fracB, refl_file, rotxy_series):
                                        ret_sum=True,
                                        Op=rX * rY)
         sim_sig_mask = sim_patt > 0
-        overlaps.append( sum(sim_sig_mask * found_spot_mask))
-
+        overlaps.append( np.sum(sim_sig_mask * found_spot_mask))
+        print("JOBOBOBOBO %d" % jid)
     return overlaps
 
-def xyscan_multi(crystal_file, fcalcs_file, fracA, fracB,
-                 strong_file, rotxy_series, n_jobs):
+def xyscan_multi(crystal, fcalcs_file, fracA, fracB,
+                 strong, scan_params, n_jobs, scan_func=xyscan):
     """
 
     :param crystal_file:
@@ -358,12 +359,44 @@ def xyscan_multi(crystal_file, fcalcs_file, fracA, fracB,
 
     from joblib import Parallel, delayed
 
-    rotxy_split = np.array_split(rotxy_series, n_jobs)
-    results = Parallel(n_jobs=n_jobs)(delayed(xyscan)\
-                (crystal_file, fcalcs_file, fracA, fracB, strong_file, rotxy_split[jid]) \
+    nscans = len( scan_params)
+    scan_idx = np.array_split(range( nscans), n_jobs)
+    scan_split = []
+    for idx in scan_idx:
+        scan_split.append( [ scan_params[i] for i in idx ] )
+
+    fcalcs_data = utils.open_flex(fcalcs_file)
+
+    results = Parallel(n_jobs=n_jobs)(delayed(scan_func)\
+                (crystal=crystal,
+                 fcalcs_data=fcalcs_data,
+                 fracA=fracA, fracB=fracB,
+                 strong=strong,jid=jid,
+                 rotxy_series=scan_split[jid]) \
                 for jid in range(n_jobs))
+    results = np.concatenate(results)
 
-    return np.concatenate(results)
+    return results
 
-from IPython import embed
-embed()
+fcalc_f = 'fcalc_slim.pkl'
+for i in some_good_hits:
+    if os.path.exists( "results/xyscan_%d.npz" % i):
+        print "exists, moving on!"
+        continue
+    crystal = data[i]["crystals"][0]
+    refl = data[i]['refl']
+    fracA = data[i]['fracA']
+    fracB = data[i]['fracB']
+    results = xyscan_multi( crystal,
+                  fcalc_f,
+                  fracA,
+                  fracB,
+                  data[i]['refl'],
+                  rotXY_series, n_jobs=6,
+                  scan_func=xyscan)
+
+    np.savez("results/xyscan_%d" % i, results=results, degs=degs, idx=i, fracA=fracA,
+             fracB = fracB)
+
+
+

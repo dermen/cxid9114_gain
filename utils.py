@@ -19,6 +19,13 @@ def open_flex(filename):
         data = cPickle.load(f)
     return data
 
+
+def save_flex(data, filename):
+    """save pickle"""
+    with open(filename, "w") as f:
+        cPickle.dump(data, f)
+
+
 def psana_mask_to_aaron64_mask(mask_32panels, pickle_name, force=False):
     """
     FormatXTCCspad divides CSPAD ASICS (panels) into 2 due to the gap that is not an

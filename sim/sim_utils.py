@@ -2,12 +2,19 @@ import os, sys
 from scipy.interpolate import interp1d
 import numpy as np
 import inspect
+import dxtbx
 from cxid9114 import utils
-from simtbx.nanoBragg import nanoBragg
 from dials.array_family import flex
 import scitbx
-from scitbx.matrix import col
+from scitbx.matrix import col, sqr
 import cPickle
+from copy import deepcopy
+from cxid9114.sim import scattering_factors
+import pylab as plt
+
+from simtbx.nanoBragg import nanoBragg
+from simtbx.nanoBragg import shapetype
+from simtbx_nanoBragg_ext import convention
 
 try:
     from joblib import effective_n_jobs, Parallel, delayed
@@ -15,11 +22,13 @@ try:
 except ImportError:
     NO_JOBLIB = True
 
-from cxid9114.utils import is_outlier
 
 cwd = os.path.dirname(os.path.abspath(inspect.getsourcefile(lambda:0)))
 energy_file = os.path.join(cwd, "energy_cal_r62.npy")
 ENERGY_CAL = np.load(energy_file)
+cryst_f = os.path.join(cwd, "c1.pkl")
+det_f = os.path.join(cwd, "test_det.pkl")
+beam_f = os.path.join(cwd, "test_beam.pkl")
 
 def energy_cal():
     """
@@ -122,7 +131,6 @@ def Amatrix_dials2nanoBragg(crystal):
     Amatrix = tuple(np.array(crystal.get_A()).reshape((3, 3)).T.ravel())
     return Amatrix
 
-from cxid9114 import parameters
 
 def simSIM(SIM=None, ener_eV=None, flux_per_en=None,
            fcalcs=None, Amatrix=None, silence=True, ret_sum=True):
@@ -160,29 +168,179 @@ def simSIM(SIM=None, ener_eV=None, flux_per_en=None,
     else:
         return patterns
 
-def simSIM_multi(SIM, ener_eV, flux_per_en, fcalcs, Amatrix, n_jobs=None):
+
+def simulate_xyscan_result(scan_data_file, prefix=None):
     """
-    :param SIM:  instance of nanoBragg
-    :param ener_eV:  the spectrum energies in eV
-    :param flux_per_en:  the flux per wavelength channel
-    :param fcalcs:  the structure factors computed per energy channel
-    :param Amatrix: A matrix for cctbx
-    :param n_jobs: number of jobs to process...
-    :return: pattern simulated
+    scan data is the output of yhe xyscan refinement script
+
+    :param scan_data_file: string path
+    :param prefix: output path prefix where results will be written
+    :return:
     """
-    if NO_JOBLIB:
-        print("No joblib installed, falling back to single job method")
-        return simSIM(SIM, ener_per_jobs, flux_per_en, fcalcs, Amatrix)
-     
-    if n_jobs is None:
-        n_jobs = effective_n_jobs()
-    ener_per_jobs = np.array_split( ener_eV, n_jobs)
-    flux_per_jobs = np.array_split( flux_per_en, n_jobs)
-    
-    assert(all([len(a)==len(b) for a,b in zip(ener_per_jobs, flux_per_jobs)]))
-    
-    results = Parallel(n_jobs=n_jobs)(delayed(simSIM)\
-        (SIM, ener_per_jobs[jid], flux_per_jobs[jid], fcalcs=None, Amatrix=Amatrix) \
-        for jid in range(n_jobs))
-    return np.sum( results,0)
+    scan_data = np.load(scan_data_file)
+    idx = int(scan_data['hit_idx'])
+    if prefix is None:
+        prefix = "refined_sim%d" % idx
+
+    data_file = "/Users/dermen/cxid9114_gain/run62_idx_-2processed.pkl"
+    data = utils.open_flex(data_file)
+    crystal = data[idx]['crystals'][0]
+    refl = data[idx]['refl']
+
+    results = scan_data["results"]
+    max_pos = np.argmax( results)
+
+    deg = [ (i,j) for i in scan_data["degs"] for j in scan_data["degs"]]
+    degi, degj = deg[max_pos]
+    x = col((1,0,0))
+    y = col((0,1,0))
+    xR = x.axis_and_angle_as_r3_rotation_matrix(degi, deg=True)
+    yR = y.axis_and_angle_as_r3_rotation_matrix(degj, deg=True)
+
+    fracA = int(scan_data["fracA"])
+    fracB = int(scan_data["fracB"])
+    flux = [fracA*1e14, fracB*1e14]
+    energy, fcalc_f = load_fcalc_file("/Users/dermen/cxid9114_gain/sim/fcalc_slim.pkl")
+
+    P = PatternFactory()
+    P.adjust_mosaicity(2, 0.05)
+
+    sim_A, sim_B = P.make_pattern2(crystal=deepcopy(crystal),
+                                   flux_per_en=flux,
+                                   energies_eV=energy,
+                                   fcalcs_at_energies=fcalc_f,
+                                   mosaic_spread=None,
+                                   mosaic_domains=None,
+                                   ret_sum=False,
+                                   Op=xR * yR)
+
+
+    img_file = "/Users/dermen/cxid9114/run62_hits_wtime.h5"
+    loader = dxtbx.load(img_file)
+    raw_img = loader.get_raw_data(idx).as_numpy_array()
+
+    patts = [sim_A, sim_B, sim_A+sim_B, raw_img]
+    refls = [refl]*4
+    utils.images_and_refls_to_simview(prefix, patts, refls)
+
+
+class PatternFactory:
+
+    def __init__(self, crystal=None, detector=None, beam=None):
+        """
+        :param crystal:  dials crystal model
+        :param detector:  dials detector model
+        :param beam: dials beam model
+        """
+        self.beam = beam
+        self.detector = detector
+        if crystal is None:
+            crystal = utils.open_flex(cryst_f)
+        if self.detector is None:
+            self.detector = utils.open_flex(det_f)
+        if self.beam is None:
+            self.beam = utils.open_flex(beam_f)
+
+        self.SIM2 = nanoBragg(self.detector, self.beam, verbose=10)
+        self.SIM2.beamcenter_convention = convention.DIALS
+        self.SIM2.oversample = 2  # oversamples the pixel ?
+        self.SIM2.polarization = 1  # polarization fraction ?
+        self.SIM2.F000 = 10  # should be number of electrons ?
+        self.SIM2.default_F = 0
+        self.SIM2.Amatrix = Amatrix_dials2nanoBragg(crystal)  # sets the unit cell
+        self.SIM2.xtal_shape = shapetype.Tophat
+        # self.SIM2.xtal_shape = shapetype.Gauss
+        self.SIM2.progress_meter = False
+        self.SIM2.flux = 1e14
+        self.SIM2.beamsize_mm = 0.004
+        self.SIM2.Ncells_abc = (10, 10, 10)
+        self.SIM2.interpolate = 0
+        self.SIM2.progress_meter = False
+        self.SIM2.verbose = 0
+        self.default_fcalc = None
+        self.default_interp_en = scattering_factors.interp_energies
+
+    def make_pattern_default(self, crystal, spectrum, show_spectrum=False,
+                     mosaic_domains=5,
+                     mosaic_spread=0.1):
+        """
+        :param crystal:  cctbx crystal
+        :param spectrum: np.array of shape 1024
+        :return: simulated pattern
+        """
+        if spectrum.shape[0] != 1024:
+            raise ValueError("Spectrum needs to have length 1024 in current version")
+        # downsample the provided spectrum
+        new_spec = interp_spectrum(spectrum,
+                                     ENERGY_CAL,
+                                     self.default_interp_en)
+
+        if self.default_fcalc is None:
+            print("Initializing Fcalcs default values, done just once!")
+            self.default_fcalc = scattering_factors.load_fcalc_for_default_spectrum()
+
+        if show_spectrum:
+            plt.plot(self.default_interp_en, new_spec, 'o')
+            plt.show()
+
+        # assume all flux passes into this spectrum
+        flux_per_en = new_spec / np.sum(new_spec) * self.SIM2.flux
+
+        # set mosaicity
+        self.SIM2.mosaic_domains = mosaic_domains  # from LS49
+        self.SIM2.mosaic_spread_deg = mosaic_spread  # from LS49
+        self.SIM2.set_mosaic_blocks(mosaic_blocks(self.SIM2.mosaic_spread_deg,
+                                                self.SIM2.mosaic_domains))
+
+        pattern = simSIM(self.SIM2,
+                           ener_eV=self.default_interp_en,
+                           flux_per_en=flux_per_en,
+                           fcalcs=self.default_fcalc,
+                           Amatrix=Amatrix_dials2nanoBragg(crystal))
+        return pattern
+
+    def adjust_mosaicity(self, mosaic_domains=None, mosaic_spread=None):
+        if mosaic_domains is None:
+            mosaic_domains = 2  # default
+        if mosaic_spread is None:
+            mosaic_spread = 0.1
+        self.SIM2.mosaic_domains = mosaic_domains  # from LS49
+        self.SIM2.mosaic_spread_deg = mosaic_spread  # from LS49
+        self.SIM2.set_mosaic_blocks(mosaic_blocks(self.SIM2.mosaic_spread_deg,
+                                                    self.SIM2.mosaic_domains))
+
+    def make_pattern2(self, crystal, flux_per_en, energies_eV, fcalcs_at_energies,
+                      mosaic_domains=None, mosaic_spread=None, ret_sum=True, Op=None):
+        """
+        :param crystal:
+        :param flux_per_en:
+        :param energies_eV:
+        :param fcalcs_at_energies:
+        :param mosaic_domains:
+        :param mosaic_spread:
+        :param ret_sum:
+        :param Op:
+        :return:
+        """
+        # set mosaicity
+        if mosaic_domains is not None or mosaic_spread is not None:
+            self.adjust_mosaicity(mosaic_domains, mosaic_spread)
+        if Op is not None:
+            print("Rots!!")
+            p_init = crystal.get_unit_cell().parameters()
+            Arot = Op * sqr(crystal.get_U()) * sqr(crystal.get_B())
+            crystal.set_A(Arot)
+            p_final = crystal.get_unit_cell().parameters()
+            if not np.allclose(p_init, p_final):
+                print "Trying to use matrix Op:"
+                print Op
+                raise ValueError("Matrix Op is not proper rotation!")
+
+        pattern = simSIM(self.SIM2,
+                           ener_eV=energies_eV,
+                           flux_per_en=flux_per_en,
+                           fcalcs=fcalcs_at_energies,
+                           Amatrix=Amatrix_dials2nanoBragg(crystal),
+                           ret_sum=ret_sum)
+        return pattern
 
