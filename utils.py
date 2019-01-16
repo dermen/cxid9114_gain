@@ -4,6 +4,9 @@ import cPickle
 import numpy as np
 import h5py
 from dials.array_family import flex
+from dxtbx.imageset import MemReader, MemMasker
+from dxtbx.datablock import DataBlockFactory
+from dxtbx.imageset import ImageSet, ImageSetData
 from cxid9114.spots import count_spots, spot_utils
 
 try:
@@ -11,6 +14,56 @@ try:
     has_psana = True
 except ImportError:
     has_psana=False
+
+
+class FormatInMemory:
+    """
+    this class is a special image type
+    necessary to create cctbx imagesets and
+    datablocks from numpy array images
+    and masks.
+    """
+    def __init__(self, image, mask=None):
+        self.image = image
+        if image.dtype != np.float64:
+            self.image = self.image.astype(np.float64)
+        if mask is None:
+            self.mask = np.ones_like( self.image).astype(np.bool)
+        else:
+            assert (mask.shape==image.shape)
+            assert( self.mask.dtype == bool)
+            self.mask = mask
+
+    def get_raw_data(self):
+        return flex.double(self.image)
+
+    def get_mask(self, goniometer=None):
+        return flex.bool(self.mask)
+
+
+
+def datablock_from_numpyarrays(image, detector, beam, mask=None):
+    """
+    So that one can do e.g.
+    >> dblock = datablock_from_numpyarrays( image, detector, beam)
+    >> refl = flex.reflection_table.from_observations(dblock, spot_finder_params)
+    without having to utilize the harddisk
+
+    :param image:  numpy array image
+    :param mask:  numpy mask
+    :param detector: dxtbx detector model
+    :param beam: dxtbx beam model
+    :return: datablock for the image
+    """
+    I = FormatInMemory(image=image, mask=mask)
+    reader = MemReader([I])
+    masker = MemMasker([I])
+    iset_Data = ImageSetData(reader, masker)
+    iset = ImageSet(iset_Data)
+    iset.set_beam(beam)
+    iset.set_detector(detector)
+    dblock = DataBlockFactory.from_imageset([iset])[0]
+    return dblock
 
 
 def open_flex(filename):
@@ -221,6 +274,7 @@ def images_and_refls_to_simview(prefix, imgs, refls):
     refl_shotIds = refl_info.keys()
     Nrefl = len( refl_shotIds)
     Nimg = len( imgs)
+
     assert(Nimg==Nrefl)
     assert( all([ i in range(Nrefl) for i in refl_shotIds]))
 

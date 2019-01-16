@@ -3,7 +3,7 @@ from itertools import groupby
 import cPickle as pickle
 import sys
 import numpy as np
-
+from copy import deepcopy
 from dials.array_family import flex
 
 def count_spots(pickle_fname):
@@ -53,6 +53,26 @@ class ReflectionSelect:
             sb_bbox = sb[i].bbox
             sb[i].bbox = (sb_bbox[0], sb_bbox[1], sb_bbox[2], sb_bbox[3], 0, 1)
         return shot_refl
+
+def as_single_shot_reflections(refl_, inplace=True):
+    """
+    sets all z-coors to 0,1
+    :param refl_: reflection table , should be just single image
+    :return: updated table
+    """
+    if not inplace:
+        refl = deepcopy( refl_)
+    else:
+        refl = refl_
+    bbox = refl['bbox']
+    sb = refl["shoebox"]
+    for i in range(len(refl)):
+        bbox[i] = (bbox[i][0], bbox[i][1], bbox[i][2], bbox[i][3], 0, 1)
+        sb_bbox = sb[i].bbox
+        sb[i].bbox = (sb_bbox[0], sb_bbox[1], sb_bbox[2], sb_bbox[3], 0, 1)
+    if not inplace:
+        return refl
+
 
 def select_refl(refl, shot_idx):
     """

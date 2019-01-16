@@ -40,3 +40,25 @@ def combine_refls(refl_tbl_lst):
             patt_refls['shoebox'][i_refl] = sb
         combined_refls.extend(patt_refls)
     return combined_refls
+
+
+def xyz_from_refl(refl, key="xyzobs.px.value"):
+    x,y,z = zip( * [refl[key][i] for i in range(len(refl))])
+    return x,y,z
+
+
+def add_xy_to_ax_as_patches(xy, patch_type, patch_sty, ax):
+    import matplotlib as mpl
+    patches = [patch_type(xy=(i_, j_), **patch_sty)
+             for i_, j_ in xy]
+
+    #squares = [Rectangle(xy=(i_ - s / 2., j_ - s / 2.), **Square_style) for i_, j_ in zip(xp, yp)]
+    #coll_cir = mpl.collections.PatchCollection(circs, match_original=True)
+    patch_coll = mpl.collections.PatchCollection(patches, match_original=True)
+    ax.add_collection(patch_coll)
+
+#r = 6 # circle radius
+#Circ_style = {"ec":"C0", "fc":"C0", "lw":"1", "radius":r}
+## predictions will be squares
+#s = 0.4*sqrt(((2*r)**2)/2) # square edge
+#Square_style = {"ec":"C1", "fc":"C1", "lw":"1", "width":s, "height":s}
