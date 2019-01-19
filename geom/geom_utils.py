@@ -3,9 +3,10 @@ import numpy as np
 from dxtbx.model import Detector
 from dials.array_family import flex
 
+
 def make_dials_cspad(psf):
     """
-    :param psf:
+    :param psf: psf as it would roll out of psana geometry object
     :return:
     """
     origins, slows, fasts = psf / 1000.  # convert from psgeom units (microns) to dials units (mm)
@@ -36,24 +37,24 @@ def add_asics_to_quad(quad, quad_number, asic_origins, asic_ss, asic_fs):
         A.set_name("asic%d" % i_a)  # name them according to master-array index (0-63)
 
 
-def psana_geom_splitter(cspad, event=None, returned_units='mm'):
+def psana_geom_splitter(psf, returned_units='mm'):
     """
     Splits the psana geometry from 32 panels to 64 panels
     because of the non-uniform pixel gap
     This creates a list of 64 origins, 64 slow-scan directions and 64 fast-scan directions
     though slow and fast scan directions are assumed parallel within
     manufacturing error
-    :param cspad:  psana.Detector instantance for a CSPAD
+    :param psf: return value of method get_psf() for any cspads geometryAccess instance <PSCalib.GeometryAccess.GeometryAccess>
     :param event: psana.Event instatance, can usually just leave it as None`
     :param returned_units: string of 'mm', 'um', or 'pixels'
     :return: PSF vectors, 64 long
     """
-    geom = cspad.geometry(event)
+    #geom = cspad.geometry(event)
     origin_64 = np.zeros((64, 3))
     FS_64 = np.zeros_like(origin_64)
     SS_64 = np.zeros_like(origin_64)
 
-    origin_32, SS_32, FS_32 = map(np.array, zip(*geom.get_psf()))
+    origin_32, SS_32, FS_32 = map(np.array, zip(*psf))
     for i in range(32):
         # create the origins of each sub asic
         origin_A = origin_32[i]

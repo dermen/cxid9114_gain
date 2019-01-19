@@ -1,27 +1,35 @@
+
 import os, sys
-from scipy.interpolate import interp1d
+import scipy.interpolate
+interp1d = scipy.interpolate.interp1d
 import numpy as np
 import inspect
 import dxtbx
-from cxid9114 import utils
-from dials.array_family import flex
+import cxid9114.utils as utils
+import dials.array_family.flex as flex
 import scitbx
-from scitbx.matrix import col, sqr
+import scitbx.matrix
+sqr = scitbx.matrix.sqr
+col = scitbx.matrix.col
 import cPickle
-from copy import deepcopy
-from cxid9114.sim import scattering_factors
+import copy
+deepcopy = copy.deepcopy
+import cxid9114.sim.scattering_factors as scattering_factors
 import pylab as plt
 
-from simtbx.nanoBragg import nanoBragg
-from simtbx.nanoBragg import shapetype
-from simtbx_nanoBragg_ext import convention
+import simtbx.nanoBragg
+nanoBragg = simtbx.nanoBragg.nanoBragg
+shapetype = simtbx.nanoBragg.shapetype
+convention = simtbx.nanoBragg.convention
 
 try:
-    from joblib import effective_n_jobs, Parallel, delayed
+    import joblib
+    effective_n_jobs = joblib.effective_n_jobs
+    Parallel = joblib.delayed
+    Parallel = joblib.Parallel
     NO_JOBLIB = False
 except ImportError:
     NO_JOBLIB = True
-
 
 cwd = os.path.dirname(os.path.abspath(inspect.getsourcefile(lambda:0)))
 energy_file = os.path.join(cwd, "energy_cal_r62.npy")
@@ -90,6 +98,41 @@ def interp_spectrum(spectrum, energies, new_energies):
     new_spec[ new_spec < 0] = 0
     return new_spec
 
+def compare_sims(SIM1, SIM2):
+    """
+    prints nanobragg params
+    :param SIM: nanobragg instance
+    :return:
+    """
+    isprop = lambda x: isinstance(x, property)
+    bad_params = ('Fbg_vs_stol', 'Fhkl_tuple', 'amplitudes', 'indices', 'raw_pixels',
+                  'xray_source_XYZ', 'xray_source_intensity_fraction', 'xray_beams',
+                  'xray_source_wavelengths_A', 'unit_cell_tuple', 'progress_pixel')
+    params = [name
+              for (name, value) in inspect.getmembers(nanoBragg, isprop)
+              if name not in bad_params]
+
+    print "Did not try to get these parameters:"
+    print bad_params
+
+    failed = []
+    for p in params:
+        try:
+            param_value1 = getattr(SIM1, p)
+            param_value2 = getattr(SIM2, p)
+            if isinstance(param_value1, tuple):
+                params_are_equal = np.allclose( param_value1, param_value2)
+            else:
+                params_are_equal = param_value1 == param_value2
+            if not params_are_equal:
+                print p, param_value1
+                print p, param_value2
+                print
+        except ValueError:
+            failed.append(p)
+
+    print "Failed to get these parameters:"
+    print failed
 
 def print_parameters(SIM):
     """
@@ -182,39 +225,45 @@ def simulate_xyscan_result(scan_data_file, prefix=None):
     if prefix is None:
         prefix = "refined_sim%d" % idx
 
-    data_file = "/Users/dermen/cxid9114_gain/run62_idx_-2processed.pkl"
-    data = utils.open_flex(data_file)
-    crystal = data[idx]['crystals'][0]
-    refl = data[idx]['refl']
+    # crystal = scan_data['crystal']
+    refl = scan_data['refl']
 
-    results = scan_data["results"]
-    max_pos = np.argmax( results)
-
-    deg = [ (i,j) for i in scan_data["degs"] for j in scan_data["degs"]]
-    degi, degj = deg[max_pos]
-    x = col((1,0,0))
-    y = col((0,1,0))
-    xR = x.axis_and_angle_as_r3_rotation_matrix(degi, deg=True)
-    yR = y.axis_and_angle_as_r3_rotation_matrix(degj, deg=True)
-
+    # xR = scan_data['optX']
+    # yR = scan_data['optY']
+    optCrystal = scan_data['optCrystal']
     fracA = int(scan_data["fracA"])
     fracB = int(scan_data["fracB"])
     flux = [fracA*1e14, fracB*1e14]
-    energy, fcalc_f = load_fcalc_file("/Users/dermen/cxid9114_gain/sim/fcalc_slim.pkl")
+    energy, fcalc_f = load_fcalc_file(scan_data['fcalc_f'])
 
     P = PatternFactory()
     P.adjust_mosaicity(2, 0.05)
 
-    sim_A, sim_B = P.make_pattern2(crystal=deepcopy(crystal),
+    sim_A, sim_B = P.make_pattern2(crystal=deepcopy(optCrystal),
                                    flux_per_en=flux,
                                    energies_eV=energy,
                                    fcalcs_at_energies=fcalc_f,
                                    mosaic_spread=None,
                                    mosaic_domains=None,
                                    ret_sum=False,
-                                   Op=xR * yR)
+                                   Op=None)  # xR * yR)
 
-
+    if 'optX_fine' in scan_data.keys():
+        #xR_fine = scan_data['optX_fine']
+        #yR_fine = scan_data['optY_fine']
+        optCryst_fine = scan_data["optCrystal_fine"]
+        sim_A_fine, sim_B_fine = P.make_pattern2(crystal=deepcopy(optCryst_fine),
+                                       flux_per_en=flux,
+                                       energies_eV=energy,
+                                       fcalcs_at_energies=fcalc_f,
+                                       mosaic_spread=None,
+                                       mosaic_domains=None,
+                                       ret_sum=False,
+                                       Op=None)  # xR_fine * yR_fine * xR * yR)
+        fine_scan=True
+    else:
+        fine_scan = False
+    # work this into the data stream, perhaps use experiment lists??
     img_file = "/Users/dermen/cxid9114/run62_hits_wtime.h5"
     loader = dxtbx.load(img_file)
     raw_img = loader.get_raw_data(idx).as_numpy_array()
@@ -223,10 +272,16 @@ def simulate_xyscan_result(scan_data_file, prefix=None):
     refls = [refl]*4
     utils.images_and_refls_to_simview(prefix, patts, refls)
 
+    if fine_scan:
+        patts = [sim_A_fine, sim_B_fine, sim_A_fine+sim_B_fine, raw_img]
+        refls = [refl]*4
+        utils.images_and_refls_to_simview(prefix+"_fine", patts, refls)
+
 
 class PatternFactory:
 
-    def __init__(self, crystal=None, detector=None, beam=None):
+    def __init__(self, crystal=None, detector=None, beam=None,
+                 Ncells_abc=(10,10,10), Gauss=False, oversample=2, panel_id=0):
         """
         :param crystal:  dials crystal model
         :param detector:  dials detector model
@@ -241,22 +296,25 @@ class PatternFactory:
         if self.beam is None:
             self.beam = utils.open_flex(beam_f)
 
-        self.SIM2 = nanoBragg(self.detector, self.beam, verbose=10)
+        self.SIM2 = nanoBragg(self.detector, self.beam, verbose=10, panel_id=panel_id)
         self.SIM2.beamcenter_convention = convention.DIALS
-        self.SIM2.oversample = 2  # oversamples the pixel ?
+        self.SIM2.oversample = oversample  # oversamples the pixel ?
         self.SIM2.polarization = 1  # polarization fraction ?
         self.SIM2.F000 = 10  # should be number of electrons ?
         self.SIM2.default_F = 0
         self.SIM2.Amatrix = Amatrix_dials2nanoBragg(crystal)  # sets the unit cell
-        self.SIM2.xtal_shape = shapetype.Tophat
-        # self.SIM2.xtal_shape = shapetype.Gauss
+        if Gauss:
+            self.SIM2.xtal_shape = shapetype.Gauss
+        else:
+            self.SIM2.xtal_shape = shapetype.Tophat
         self.SIM2.progress_meter = False
         self.SIM2.flux = 1e14
         self.SIM2.beamsize_mm = 0.004
-        self.SIM2.Ncells_abc = (10, 10, 10)
+        self.SIM2.Ncells_abc = Ncells_abc
         self.SIM2.interpolate = 0
         self.SIM2.progress_meter = False
         self.SIM2.verbose = 0
+        self.SIM2.seed = 9012
         self.default_fcalc = None
         self.default_interp_en = scattering_factors.interp_energies
 
@@ -343,4 +401,56 @@ class PatternFactory:
                            Amatrix=Amatrix_dials2nanoBragg(crystal),
                            ret_sum=ret_sum)
         return pattern
+
+def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=2,
+             Ncells_abc=(5,5,5), mos_dom=20, fcalc_f="fcalc_slim.pkl",
+             mos_spread=0.15, fracA=0.5, fracB=0.5, tot_flux=1e14):
+    """
+    The idea, given a crystal and a list of reflections, simulate patterns
+    in the two color channels,
+
+    :param crystal: dxtbx crystal model
+    :param detector: dxtbx detector model
+    :param panel_id: panel id for the detector
+    :param Gauss: simtbx param, use a gaussian crystal model or not (if not, use tophat)
+    :param oversample: simtbx param, over-sample each pixel in simulation to get better intensity meas
+    :param Ncells_ab: simtbx param, how many cells
+    :param mos_dom: simtbx param, number of mosaic domains
+    :param fcalc_f: simtbx param, path to fcalc file, in this case the two color fcalc file should be specified
+                an fcalc file is a pickled dictionary with two keys, unlocking 1) photon energies (floats) and
+                2) cctbx structure factor objects for that energy, see `cxid9114/sim/fcalc_slim.pkl` which
+                is default for two color, made using the code in `sim/scattering_factors.py`
+    :param mos_spread:  azimuthal spread parameter in degrees
+    :param fracA: fraction of color A from the 2-color spectrum
+    :param fracB:  `` colorB ``
+    :param tot_flux: total flux for the simtbx simulation, will be divided into two color channels
+    :return: the output dictionary described above, has a lot of useful information! Just explore below.
+    """
+    Patts = PatternFactory(detector=detector,
+                           Ncells_abc=Ncells_abc,
+                           Gauss=Gauss,
+                           oversample=oversample,
+                           panel_id=panel_id)
+
+    en, fcalc = load_fcalc_file(fcalc_f)
+    flux = [fracA * tot_flux, fracB * tot_flux]
+    sim_patt = Patts.make_pattern2(crystal, flux, en, fcalc, mos_dom, mos_spread, False)
+    imgA, imgB = sim_patt
+
+    # OUTPUT DICTIONARY, many objects stored for bookkeeping purposes.
+    dump = {'imgA': imgA,
+            'imgB': imgB,
+            'sim_param': {'mos_dom': mos_dom,
+                          'mos_spread': mos_spread,
+                          'Gauss': Gauss,
+                          'Ncells_abc': Ncells_abc,
+                          'tot_flux': tot_flux,
+                          'fracA': fracA,
+                          'fracB': fracB,
+                          'fcalc_f': fcalc_f,
+                          'crystal': crystal
+                          }
+            }
+
+    return dump
 

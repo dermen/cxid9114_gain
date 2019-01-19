@@ -80,8 +80,12 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
         """
         if "multi_panel" in self._h5_handle.keys():
             self.as_multi_panel = self._h5_handle["multi_panel"][()]
+            if self.as_multi_panel:
+                if "psf" not in self._h5_handle.keys():
+                    raise ValueError("Need the TJ Lane PSF vectors! psana.Detector(cspad).geometry().get_psf()")
         else:
             self.as_multi_panel = False
+
 
     def load_dark(self):
         self.dark = self._h5_handle["pedestal"][()]
@@ -134,8 +138,6 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
                     trusted_range)
 
         else:
-            if "psf" not in self._h5_handle.keys():
-                raise ValueError("Need the TJ Lane PSF vectors! psana.Detector(cspad).geometry().get_psf()")
             psf = self._h5_handle["psf"][()]
             psf[0, :, 2] = -1*CAMERA_LENGTH*1000
             self._cctbx_detector = geom_utils.make_dials_cspad(psf)
@@ -154,14 +156,18 @@ class FormatHDF5D9114(FormatHDF5, FormatStill):
                 weights=panels.ravel())[0]
 
     def show_image(self, index, **kwargs):
-        self._correct_raw_data(index)
-        img2d = self.assemble(self.panels)
-        if CAN_PLOT:
-            plt.figure()
-            plt.imshow(img2d, **kwargs)
-            plt.show()
+        if self.as_multi_panel:
+            self._correct_raw_data(index)
+            img2d = self.assemble(self.panels)
+            if CAN_PLOT:
+                plt.figure()
+                plt.imshow(img2d, **kwargs)
+                plt.show()
+            else:
+                print("Cannot plot")
         else:
-            print("Cannot plot")
+            print ("not implemented for multi panel")
+
     def _assemble_panels(self):
         if not self.as_multi_panel:
             self.panel_img = np.histogram2d(

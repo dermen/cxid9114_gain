@@ -74,6 +74,15 @@ def as_single_shot_reflections(refl_, inplace=True):
         return refl
 
 
+def refls_by_panelname(refls):
+    Nrefl = len( refls)
+    panel_names = np.array([refls["panel"][i] for i in range( Nrefl)])
+    uniq_names = np.unique(panel_names)
+    refls_by_panel = {name: refls.select(flex.bool(panel_names == name))
+                      for name in uniq_names }
+    return refls_by_panel
+
+
 def select_refl(refl, shot_idx):
     """
     selects reflections belinging to a particular shot index
@@ -81,8 +90,6 @@ def select_refl(refl, shot_idx):
     :param shot_idx: int, shot index
     :return:
     """
-    from IPython import embed
-    embed()
     n = len( refl)
     select_me = flex.bool([refl['bbox'][i][4] == int(shot_idx) for i in range(n)])
     return refl.select(select_me)

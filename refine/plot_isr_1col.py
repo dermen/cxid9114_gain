@@ -41,7 +41,7 @@ if sim_new_cryst:
     imgA, imgB = Patts.make_pattern2(C1, flux, en, fcalc, 20,0.1, False)
 
 else:
-    orig_file = os.path.splitext( data_file)[0] + ".h5"
+    orig_file = os.path.splitext(data_file)[0] + ".h5"
     imgA = dxtbx.load(orig_file).get_raw_data(0).as_numpy_array()
 
 threshA = threshB = 0

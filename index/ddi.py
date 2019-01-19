@@ -31,7 +31,7 @@ from libtbx.utils import Sorry
 if HAS_TWO_COLOR:
     indexer_phil_scope.adopt_scope(two_color_phil_scope)
     params = indexer_phil_scope.extract()
-    MIN_SPOT_PER_HIT = 30
+    MIN_SPOT_PER_HIT = 5
 
 #   =====================================
 #   Parameters
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     n_indexed = 0
     idx_indexed = []
     idx_cryst = {}
-    Nprocess = -2
+    Nprocess = 40
     print('Iterating over {:d} hits'.format(Nhits))
     for i_hit in range(Nhits):
         if i_hit == Nprocess:
@@ -109,8 +109,6 @@ if __name__ == "__main__":
 
         print 'Indexing shot {:d} (Hit {:d}/{:d}) using {:d} spots' \
             .format(shot_idx, i_hit+1, Nhits, len(hit_refl)),
-        from IPython import embed
-        embed()
         orient = INDEXER(reflections=hit_refl, imagesets=[hit_imgset], params=params)
 
         try:
@@ -124,11 +122,11 @@ if __name__ == "__main__":
             idx_cryst[shot_idx] = {}
             idx_cryst[shot_idx]["crystals"] = crystals
             idx_cryst[shot_idx]["refl"] = hit_refl
-            embed()
             idx_cryst[shot_idx]["best"] = orient.best_rmsd
             #idx_cryst[shot_idx]["experiments"] = orient.refined_experiments
-            orient.export_as_json(orient.refined_experiments,
-                                  file_name="shot%d.json" % shot_idx)
+            idx_cryst[shot_idx]["image_file"] = image_fname
+            #orient.export_as_json(orient.refined_experiments,
+            #                      file_name="shot%d.json" % shot_idx)
         except Sorry, RunTimeError:
             print("Could not index")
             pass
@@ -136,8 +134,11 @@ if __name__ == "__main__":
         print ("Indexed %d / %d hits" % (n_indexed, Nhits))
     print ("Indexed %d / %d hits" % (n_indexed, Nhits))
 
-    with open("run62_idx_%dprocessed.pkl" % Nprocess, "w") as o:
-        cPickle.dump(idx_cryst, o)
-    #print idx_indexed
+    if len( sys.argv) < 4:
+        output_name ="sim4_idx_%dprocessed.pkl" % Nprocess
+    else:
+        output_name = sys.argv[3]
 
-#agent.stop_allocation_profiler()
+    with open(output_name,  "w") as o:
+        cPickle.dump(idx_cryst, o)
+
