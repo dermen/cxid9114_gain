@@ -6,12 +6,49 @@ import h5py
 MASK_FILE \
     =  os.path.join(os.path.dirname(__file__), 'masks.hdf5')
 
+from cxid9114 import utils
+from dials.array_family import flex
+
+
+def compress_masks(mask_pickles, outname):
+    """
+    masks compress rather nicely
+    :param mask_pickles:  mask pickle files containing dials masks
+    :param outname: hdf5 name
+    """
+    with h5py.File(outname, "w") as h5:
+        for mask_f in mask_pickles:
+            mask = utils.open_flex(mask_f)  # these are tuples in dials land
+            data = [m.as_numpy_array() for m in mask]
+            h5.create_dataset(mask_f, data=data,
+                              compression='gzip', compression_opts=9, shuffle=True)
+
+
+def unload_compress_masks(fname):
+    """
+    unpacks the fname and stores the masks in dials format
+    :param fname:  a compress_mask files created using
+    compress_masks
+    """
+    with h5py.File(fname, "r") as h5:
+        for name in h5.keys():
+            if os.path.exisits(name):
+                print("Path %d exists!, skipping" % name)
+                continue
+            data = h5[name][()]
+            if data.dtype != bool:
+                continue
+            data = tuple([flex.bool(m) for m in data])
+            utils.save_flex(data, name)
+
+
 def load_mask(key):
     with h5py.File(MASK_FILE) as h5:
         if key not in list(h5.keys()):
             raise Exception("Only accepts: %s"%", ".join(h5.keys()))
         mask = h5[key].value
     return mask
+
 
 def mask_small_regions(gain_data, Ncutoff=1000):
     """ masks certain high-low gain regions
@@ -27,6 +64,7 @@ def mask_small_regions(gain_data, Ncutoff=1000):
         if Nlow < Ncutoff:
             mask[i_pan][is_low] = False
     return mask
+
 
 def details_mask(raw, border=3, plot=False):
     mask = np.ones_like(raw).astype(np.bool)
@@ -58,7 +96,6 @@ def details_mask(raw, border=3, plot=False):
 
 
 if __name__=="__main__":
-
     import psana
     ds = psana.DataSource("exp=cxid9114:run=62")
     events = ds.events()
