@@ -35,14 +35,13 @@ from dxtbx.model import Detector
 import os
 
 fcalc_f = "/Users/dermen/cxid9114_gain/sim/fcalc_slim.pkl"
-outdir = "ssirp_res"
+outdir = "ssirp_res_det.refine"
 
 if not os.path.exists(outdir):
     os.makedirs(outdir)
 BEAM = utils.open_flex(sim_utils.beam_f)
 sad_wave = parameters.ENERGY_CONV / 8950
 BEAM.set_wavelength(sad_wave)
-
 MULTI_PANEL = True
 
 spot_par = find_spots_phil_scope.fetch(source=parse("")).extract()
@@ -57,7 +56,6 @@ spot_par.spotfinder.filter.min_spot_size = 2
 spot_par.spotfinder.force_2d = True
 spot_par.spotfinder.lookup.mask = "../mask/dials_mask_64panels_2.pkl"
 
-
 spot_par_moder.spotfinder.threshold.dispersion.global_threshold = 56.
 spot_par_moder.spotfinder.threshold.dispersion.gain = 28.
 spot_par_moder.spotfinder.threshold.dispersion.kernel_size = [1, 1]
@@ -70,17 +68,24 @@ spot_par_moder.spotfinder.lookup.mask = "../mask/dials_mask_64panels_2.pkl"
 
 img_f = "xtc_102.loc"
 loader = dxtbx.load(img_f)
-import os
-weak_shots_f = "weak_shots.txt"
-failed_idx_f = "weak_shots.txt"
-if os.path.exists(weak_shots_f):
-    weak_shots = list(np.loadtxt(weak_shots_f, str).astype(int))
 
-if os.path.exists(failed_idx_f):
-    failed_shots = list(np.loadtxt(failed_idx_f, str).astype(int))
-else:
-    weak_shots = []
-    failed_shots = []
+
+def load_tracker_f(fname):
+    data = []
+    if os.path.exists(fname):
+        data = np.loadtxt(fname, str)
+        if data.size:
+            data = list(data.astype(int))
+    return data
+
+skip_weak = True
+skip_failed = True
+weak_shots_f = os.path.join(outdir, "weak_shots.txt")
+failed_idx_f = os.path.join(outdir, "failed_shots.txt")
+indexed_f = os.path.join(outdir, "indexed_shots.txt")
+weak_shots = load_tracker_f(weak_shots_f)
+failed_shots = load_tracker_f(failed_idx_f)
+indexed_shots = load_tracker_f(indexed_f)
 
 IMGSET = loader.get_imageset(img_f)
 DETECTOR = IMGSET.get_detector(0)
@@ -89,15 +94,14 @@ Nprocessed = 0
 crystals = {}
 N = len(IMGSET)  # number to process
 for idx in range(N):
-    if idx in weak_shots:
+    if idx in weak_shots and skip_weak:
         print("Skipping weak shots %d" % idx)
         continue
-    if idx in failed_shots:
+    if idx in failed_shots and skip_failed:
         print("Skipping failed idx shots %d" % idx)
         continue
 
     iset = IMGSET[ idx:idx+1]
-    
     iset.set_beam(BEAM)
     
     dblock = DataBlockFactory.from_imageset(iset)[0]
@@ -114,9 +118,14 @@ for idx in range(N):
     sad_index_params.indexing.multiple_lattice_search.max_lattices = 1
     sad_index_params.indexing.stills.refine_all_candidates = True
     sad_index_params.indexing.method = "fft1d"
+    sad_index_params.refinement.parameterisation.crystal.fix = "all"
+    sad_index_params.refinement.parameterisation.detector.fix = None
+    sad_index_params.refinement.parameterisation.detector.panels = "hierarchical"
+    sad_index_params.refinement.parameterisation.detector.hierarchy_level = 1
+    sad_index_params.refinement.parameterisation.beam.fix = "all"
     sad_index_params.indexing.stills.refine_candidates_with_known_symmetry = True
     sad_index_params.indexing.stills.candidate_outlier_rejection = False
-    sad_index_params.indexing.stills.rmsd_min_px = 4
+    sad_index_params.indexing.stills.rmsd_min_px = 8
     sad_index_params.indexing.debug = True
     sad_index_params.indexing.fft1d.characteristic_grid = 0.029
     #sad_index_params.indexing.refinement_protocol.mode = ""
@@ -134,9 +143,11 @@ for idx in range(N):
         failed_shots.append( idx)
         np.savetxt(failed_idx_f, failed_shots, fmt="%d")
         continue
+    indexed_shots.append(idx)
+    np.savetxt(indexed_f, indexed_shots, fmt="%d")
 
     exp_name = os.path.join(outdir, "exp_%d.json" % Nprocessed )
-    refl_name = os.path.join(outdir, "refl_%d.json" % Nprocessed)
+    refl_name = os.path.join(outdir, "refl_%d.pkl" % Nprocessed)
     orient.export_as_json(orient.refined_experiments, file_name=exp_name)
     utils.save_flex(orient.refined_reflections, refl_name)
 
