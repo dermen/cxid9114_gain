@@ -1,4 +1,111 @@
+import bisect
+import os
+import cPickle
 import numpy as np
+import h5py
+from dials.array_family import flex
+from dxtbx.imageset import MemReader, MemMasker
+from dxtbx.datablock import DataBlockFactory
+from dxtbx.imageset import ImageSet, ImageSetData
+from cxid9114.spots import count_spots, spot_utils
+
+try:
+    import psana
+    has_psana = True
+except ImportError:
+    has_psana=False
+
+
+class FormatInMemory:
+    """
+    this class is a special image type
+    necessary to create cctbx imagesets and
+    datablocks from numpy array images
+    and masks.
+    """
+    def __init__(self, image, mask=None):
+        self.image = image
+        if image.dtype != np.float64:
+            self.image = self.image.astype(np.float64)
+        if mask is None:
+            self.mask = np.ones_like( self.image).astype(np.bool)
+        else:
+            assert (mask.shape==image.shape)
+            assert( self.mask.dtype == bool)
+            self.mask = mask
+
+    def get_raw_data(self):
+        return flex.double(self.image)
+
+    def get_mask(self, goniometer=None):
+        return flex.bool(self.mask)
+
+
+
+def datablock_from_numpyarrays(image, detector, beam, mask=None):
+    """
+    So that one can do e.g.
+    >> dblock = datablock_from_numpyarrays( image, detector, beam)
+    >> refl = flex.reflection_table.from_observations(dblock, spot_finder_params)
+    without having to utilize the harddisk
+
+    :param image:  numpy array image
+    :param mask:  numpy mask
+    :param detector: dxtbx detector model
+    :param beam: dxtbx beam model
+    :return: datablock for the image
+    """
+    I = FormatInMemory(image=image, mask=mask)
+    reader = MemReader([I])
+    masker = MemMasker([I])
+    iset_Data = ImageSetData(reader, masker)
+    iset = ImageSet(iset_Data)
+    iset.set_beam(beam)
+    iset.set_detector(detector)
+    dblock = DataBlockFactory.from_imageset([iset])[0]
+    return dblock
+
+
+def open_flex(filename):
+    """unpickle the flex file which requires flex import"""
+    with open(filename, "r") as f:
+        data = cPickle.load(f)
+    return data
+
+
+def save_flex(data, filename):
+    """save pickle"""
+    with open(filename, "w") as f:
+        cPickle.dump(data, f)
+
+
+def psana_mask_to_aaron64_mask(mask_32panels, pickle_name, force=False):
+    """
+    FormatXTCCspad divides CSPAD ASICS (panels) into 2 due to the gap that is not an
+    integer multiple of 109.92 microns on each CSPAD ASIC,
+    This does the same for masks that are made in the psana format.
+
+    :param mask_32panels:  psana-style mask (False means "mask this pixel")
+    :param pickle_name: string , where to store the flex mask to use for FormatXTCCspad
+    :param force: bool, whether to force an overwrite of pickle_name
+    :return: None
+    """
+    flex_mask = []
+    for panelmask in mask_32panels:
+        flex_mask += [panelmask[:, :194], panelmask[:, 194:]]
+
+    # or this one liner for interactive ease
+    # flex_mask = [ l for sl in [(m[:, :194], m[:, 194:]) for m in mask_32panels] for l in sl]
+
+    # this just maps to flex.bool but also ensures arrays are contiguous as
+    # that is a requirement for flex (I think)
+    flex_mask = tuple(map(lambda x: flex.bool(np.ascontiguousarray(x)), flex_mask))
+    if not force:
+        if os.path.exists(pickle_name):
+            raise OSError("The file %s exists, use force=True to overwrite" % pickle_name)
+    with open(pickle_name, "w") as out:
+        cPickle.dump(flex_mask, out)
+
 
 def smooth(x, beta=10.0, window_size=11):
     """
@@ -36,9 +143,8 @@ def smooth(x, beta=10.0, window_size=11):
     y = np.convolve(w / w.sum(), s, mode='valid')
 
     # remove the extra array length convolve adds
-    b = int((window_size - 1) / 2 )
+    b = int((window_size - 1) / 2)
     smoothed = y[b:len(y) - b]
-
 
     return smoothed
 
@@ -73,7 +179,6 @@ def is_outlier(points, thresh=3.5):
 
     modified_z_score = 0.6745 * diff / med_abs_deviation
 
-
     return modified_z_score > thresh
 
 
@@ -86,13 +191,14 @@ def write_cxi_peaks(h5, peaks_path, pkX, pkY, pkI):
     :param pkY: Y-coordinate of peaks (list of lists like pkX)
     :param pkI: Intensity of peaks (list of float
     """
+    import numpy as np
     npeaks = np.array([len(x) for x in pkX])
     max_n = max(npeaks)
     Nimg = len(pkX)
 
     data_x = np.zeros((Nimg, max_n), dtype=np.float32)
-    data_y = np.zeros_like(data_x)
     data_I = np.zeros_like(data_x)
+    data_y = np.zeros_like(data_x)
 
     for i in xrange(Nimg):
         n = npeaks[i]
@@ -105,3 +211,81 @@ def write_cxi_peaks(h5, peaks_path, pkX, pkY, pkI):
     peaks.create_dataset('peakXPosRaw', data=data_x)
     peaks.create_dataset('peakYPosRaw', data=data_y)
     peaks.create_dataset('peakTotalIntensity', data=data_I)
+
+
+def make_event_time(sec, nanosec, fid):
+    if not has_psana:
+        print("No psana")
+        return
+    time = int((sec<<32)|nanosec)
+    et = psana.EventTime(time, fid)
+    return time, et
+
+
+class GetSpectrum:
+    """
+    The spectrum data is processed separately and stored in
+    hdf5 files where there is one spectrum per event time
+
+    Then, when we process the CSPAD images we keep a copy of each
+    CSPAD images event time, and this class is designed to retrieve
+    the spectrum from the hdf5 file for a given event time
+    """
+    def __init__(self,
+               spec_file="/home/dermen/cxid9114/spec_trace/traces.62.h5",
+               spec_file_times="event_time",
+               spec_file_data="line_mn",
+               spec_is_1d = True):
+        """
+        :param spec_file:  path to the spectrum file which contans data and event times
+        :param spec_file_times: dataset path of the times in the hdf5 file
+        :param spec_file_data: dataset path of the spectrum data in the hdf5 file
+        :param spec_is_1d: is the spectrum data 1d? If not process it as if it were 2d
+        """
+        self._f = h5py.File(spec_file, 'r')
+        times = self._f[spec_file_times][()]
+        self.spec_traces = self._f[spec_file_data]
+        self.order = times.argsort()
+        self.spec_sorted_times = times[self.order]
+        self.spec_is_1d = spec_is_1d
+
+    def get_spec(self, time):
+        """
+        Retrieve the spectrum!
+        :param time: psana event time combo of sec and nanosec
+        :return: the spectrum data if found, else None
+        """
+        if time not in self.spec_sorted_times:
+            print "No spectrum for given time %d" % time
+            return None
+        sorted_pos = bisect.bisect_left(self.spec_sorted_times, time)
+        trace_idx = self.order[sorted_pos]
+        data = self.spec_traces[trace_idx]
+
+        if self.spec_is_1d:
+            return data
+        #else:
+        #    return self.project_fee_img(data)
+
+def images_and_refls_to_simview(prefix, imgs, refls):
+
+    refls_concat = spot_utils.combine_refls(refls)
+    refl_info = count_spots.group_refl_by_shotID(refls_concat)
+    refl_shotIds = refl_info.keys()
+    Nrefl = len( refl_shotIds)
+    Nimg = len( imgs)
+
+    assert(Nimg==Nrefl)
+    assert( all([ i in range(Nrefl) for i in refl_shotIds]))
+
+    with open("%s_strong.pkl" % prefix, "w") as strong_f:
+        cPickle.dump(refls_concat, strong_f)
+        print "Wrote %s" % strong_f.name
+
+    with h5py.File( "%s.h5" % prefix, "w") as img_f:
+        for i_img in range(Nimg):
+            if imgs[i].dtype != np.float32:
+                imgs[i] = imgs[i].astype(np.float32)
+        img_f.create_dataset("simulated_d9114_images",
+                             data=imgs)
+        print "Wrote %s" % img_f.filename

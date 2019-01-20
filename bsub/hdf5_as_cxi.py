@@ -8,6 +8,7 @@ import dxtbx
 from cxid9114.spots import count_spots
 
 MIN_SPOT_PER_HIT = 30
+Nmax_write = 20
 output_dir = "."
 
 pickle_fname = sys.argv[1]
@@ -46,6 +47,8 @@ with h5py.File( output_h5_name, "w") as out_h5:
                                        shape=(Nhits, img_sh[0], img_sh[1]) )
     all_spotX, all_spotY, all_spotI = [], [], []
     for i_hit in range(Nhits):
+        if i_hit==Nmax_write:
+            break
         print '\rSaving hit {:d}/{:d}'.format(i_hit+1, Nhits),
         sys.stdout.flush()
         shot_idx = idx[where_hits[i_hit]]

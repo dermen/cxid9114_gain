@@ -16,13 +16,13 @@ from cxid9114.spots import count_spots
 from libtbx.utils import Sorry
 
 params = indexer_phil_scope.extract()
-MIN_SPOT_PER_HIT = 30
+MIN_SPOT_PER_HIT = 3
 
 #   =====================================
 #   Parameters
 show_hits = False
 INDEXER = stills_indexer.stills_indexer
-KNOWN_SYMMETRY = crystal.symmetry("78,78,37,90,90,90","P43212")
+KNOWN_SYMMETRY = crystal.symmetry("79,79,38,90,90,90","P43212")
 params.refinement.parameterisation.beam.fix = "all"
 params.refinement.parameterisation.detector.fix = "all"
 params.indexing.method = "fft1d"
