@@ -16,6 +16,9 @@ from dials.algorithms.indexing.indexer import \
 from dxtbx.model.experiment_list import Experiment, ExperimentList
 from dials.algorithms.shoebox import MaskCode
 from dials.algorithms.indexing.stills_indexer import stills_indexer
+
+from memory_profiler import profile
+
 help_message = '''
 This program indexes images with diffraction spots at two distinct wavelengths.
 The indexing algorithm derives from real space grid search. The 2-D grid search
@@ -56,13 +59,15 @@ def index_reflections_detail(debug, experiments,
   ''' overwrites base class index_reflections function and assigns spots to
      their corresponding experiment (wavelength)'''
 
+  print("\n\n special indexing \n\n")
+  # initialize each reflections miller index to 0,0,0
   reflections['miller_index'] = flex.miller_index(len(reflections), (0,0,0))
 
-  #for two wavelengths
+  # for two wavelengths
   assert len(experiments) == 3
-  low_energy = 0
-  high_energy = 1
-  avg_energy =2
+  low_energy = 0   # 0th experiment is low-energy
+  high_energy = 1  # 1st experiment is high-energ
+  avg_energy = 2  # 2nd experiment is average energy (for spot overlaps)
 
   # code to check input orientation matrix
   # get predicted reflections based on basis vectors
@@ -77,20 +82,30 @@ def index_reflections_detail(debug, experiments,
   if d_min is not None:
     d_spacings = 1/reflections['rlp'].norms()
     inside_resolution_limit &= (d_spacings > d_min)
+
+  # boolean array, all yet-to-be spots that are bound by the resolution
   sel = inside_resolution_limit & (reflections['id'] == -1)
+  # array of indices of the reflections
   isel = sel.iselection()
-  rlps0 = reciprocal_lattice_points1.select(isel)
-  rlps1 = reciprocal_lattice_points2.select(isel)
-  rlps = (rlps0,rlps1)
+# I believe .select( isel) is same as .select( sel)
+  rlps0 = reciprocal_lattice_points1.select(isel)  # low-energy beam lp vectors calculated in two_color_grid_search
+  rlps1 = reciprocal_lattice_points2.select(isel)  # high-energy beam lps!
   refs = reflections.select(isel)
+
+
+  rlps = (rlps0, rlps1)  # put em in a tuple ?
   rlp_norms = []
   hkl_ints = []
   norms = []
   diffs = []
-
+  c1 = experiments.crystals()[0]
+  assert( len(experiments.crystals()) == 1 )  # 3 beams but only 1 crystal!
   A = matrix.sqr( experiments.crystals()[0].get_A())
   A_inv = A.inverse()
 
+  # confusing variable names, but for each set of R.L.P.s.
+  # (one for the high and one for the low energy beam)
+  # find the distance to the nearest integer hkl
   for rlp in range(len(rlps)):
     hkl_float = tuple(A_inv) * rlps[rlp]
     hkl_int = hkl_float.iround()
@@ -128,7 +143,6 @@ def index_reflections_detail(debug, experiments,
 
   # if more than one spot can be assigned the same miller index then choose
   # the closest one
-
   miller_indices = reflections['miller_index'].select(isel)
   rlp_norms = reflections['rlp'].select(isel).norms()
   same=0
@@ -158,7 +172,7 @@ def index_reflections_detail(debug, experiments,
             reflections['id'][isel[i]] = low_energy
 
   #calculate Bragg angles
-  s0 =col(experiments[2].beam.get_s0())
+  s0 = col(experiments[2].beam.get_s0())
   lambda_0 = experiments[0].beam.get_wavelength()
   lambda_1 = experiments[1].beam.get_wavelength()
   det_dist = experiments[0].detector[0].get_distance()
@@ -203,7 +217,7 @@ def index_reflections_detail(debug, experiments,
       reflections['id'][isel[i]] = avg_energy
       reflections['rlp'][isel[i]] = (avg_rlp0, avg_rlp1, avg_rlp2)
 
-    # check for repeated hkl in experiment 2, and if experiment 2 has same hkl as experiment 0 or 1 the spot with the largest variance is assigned to experiment -2 and the remaining spot is assigned to experiment 2
+  # check for repeated hkl in experiment 2, and if experiment 2 has same hkl as experiment 0 or 1 the spot with the largest variance is assigned to experiment -2 and the remaining spot is assigned to experiment 2
 
   for i_hkl, hkl in enumerate(miller_indices):
     if hkl == (0,0,0): continue
@@ -278,7 +292,11 @@ class indexer_two_color(stills_indexer):
     self.refined_reflections = indexed2
 
   def index_reflections(self,experiments,reflections,verbosity=0):
-    '''if there are two or more experiments calls overloaded index_reflections'''
+    '''
+    if there are two or more experiments calls overloaded index_reflections
+    This method should do everything that indexer_base.index_reflections does..
+    which appears to be setting some kind of reflectio flags
+    '''
     assert len(experiments) > 1
     assert len(self.imagesets) == 1
 
@@ -293,6 +311,11 @@ class indexer_two_color(stills_indexer):
                              self.d_min,
                              tolerance=params_simple.hkl_tolerance,
                              verbosity=verbosity)
+
+    for i in range(len(reflections)):
+      print("BLILILILIT")
+      if reflections['id'][i] == -1:
+        reflections['id'][i] = 0
 
     reflections.set_flags(
       reflections['miller_index'] != (0,0,0), reflections.flags.indexed)
@@ -312,6 +335,7 @@ class indexer_two_color(stills_indexer):
 
   def find_lattices(self):
     '''assigns the crystal model and the beam(s) to the experiment list'''
+    print("\n\nFINDING LATTTTSSSSSS\n")
     self.two_color_grid_search()
     crystal_models = self.candidate_crystal_models
     assert len(crystal_models) == 1
@@ -322,6 +346,7 @@ class indexer_two_color(stills_indexer):
     '''creates candidate reciprocal lattice points based on two beams and performs
     2-D grid search based on maximizing the functional using N_UNIQUE_V candidate
     vectors (N_UNIQUE_V is usually 30 from Guildea paper)'''
+
     assert len(self.imagesets) == 1
     detector = self.imagesets[0].get_detector()
 
@@ -367,60 +392,64 @@ class indexer_two_color(stills_indexer):
     cell_dimensions = self.target_symmetry_primitive.unit_cell().parameters()[:3]
     unique_cell_dimensions = set(cell_dimensions)
 
-    basis_vec_noise =True
-    noise_scale = 1.5
-    _N = len( SST.angles)
-    _N = 270000   # massively oversample the hemisphere so we can apply noise to our search
-    print "Number of search vectors: %i" %( _N * len(unique_cell_dimensions))
-    J = _N*2
-    _thetas = [np.arccos( (2.*j - 1. - J)/J)
-        for j in range(1,J+1)]
-    _phis = [ np.sqrt( np.pi*J) *np.arcsin( (2.*j - 1. - J)/J )
-        for j in range(1,J+1)]
-    _x = np.sin(_thetas)*np.cos(_phis)
-    _y = np.sin(_thetas)*np.sin(_phis)
-    _z = np.cos(_thetas)
-    nn = int(_N * 1.01)
-    _u_vecs = np.array(zip(_x,_y,_z))[-nn:]
+    print("Makring search vecs")
+    spiral_method = True
+    if spiral_method:
+        basis_vec_noise =True
+        noise_scale = 2.
+        #_N = 200000   # massively oversample the hemisphere so we can apply noise to our search
+        _N = 100000
+        print "Number of search vectors: %i" %( _N * len(unique_cell_dimensions))
+        J = _N*2
+        _thetas = [np.arccos( (2.*j - 1. - J)/J)
+            for j in range(1,J+1)]
+        _phis = [ np.sqrt( np.pi*J) *np.arcsin( (2.*j - 1. - J)/J )
+            for j in range(1,J+1)]
+        _x = np.sin(_thetas)*np.cos(_phis)
+        _y = np.sin(_thetas)*np.sin(_phis)
+        _z = np.cos(_thetas)
+        nn = int(_N * 1.01)
+        _u_vecs = np.array(zip(_x,_y,_z))[-nn:]
 
-    print("Getting u vecs")
-    rec_pts = np.array([self.reciprocal_lattice_points[i] for i in range(len(self.reciprocal_lattice_points))])
-    N_unique = len(unique_cell_dimensions)
+        rec_pts = np.array([self.reciprocal_lattice_points[i] for i in range(len(self.reciprocal_lattice_points))])
+        N_unique = len(unique_cell_dimensions)
 
-    # much faster to use numpy for massively over-sampled hemisphere..
-    func_vals = np.zeros( nn*N_unique)
-    vecs = np.zeros( (nn*N_unique, 3) )
-    for i, l in enumerate(unique_cell_dimensions):
-      # create noise model on top of lattice lengths...
-      if basis_vec_noise:
-        print("\n\n**APPLYING NOISE**\n\n")
-        vec_mag = np.random.normal( l, scale=noise_scale, size=_u_vecs.shape[0] )
-        vec_mag = vec_mag[:,None]
-      else:
-        vec_mag = l
+        # much faster to use numpy for massively over-sampled hemisphere..
+        func_vals = np.zeros( nn*N_unique)
+        vecs = np.zeros( (nn*N_unique, 3) )
+        for i, l in enumerate(unique_cell_dimensions):
+          # create noise model on top of lattice lengths...
+          if basis_vec_noise:
+            vec_mag = np.random.normal( l, scale=noise_scale, size=_u_vecs.shape[0] )
+            vec_mag = vec_mag[:,None]
+          else:
+            vec_mag = l
 
-      ul = _u_vecs * vec_mag
-      func_slc = slice( i*nn, (i+1)*nn)
-      vecs[func_slc] = ul
-      func_vals[func_slc] = np.sum( np.cos( 2*np.pi*np.dot(rec_pts, ul.T) ),
-                                  axis=0)
-    #vectors = flex.vec3_double()
-    #function_values = flex.double()
-    #for i in range( _N):
-    ##for i, direction in enumerate(SST.angles):
-    #  for l in unique_cell_dimensions:
-    #    v = matrix.col( tuple(_u_vecs[i] )) *l
-    #    #v = matrix.col(direction.dvec) * l
-    #    f = compute_functional(v.elems)
-    #    vectors.append(v.elems)
-    #    function_values.append(f)
-    print("made u vecs")
-    order = np.argsort(func_vals)[::-1]  # sort function values, largest values first
-    function_values = func_vals[order]
-    vectors = vecs[order]
-    #perm = flex.sort_permutation(function_values, reverse=True)
-    #vectors = vectors.select(perm)
-    #function_values = function_values.select(perm)
+          ul = _u_vecs * vec_mag
+          func_slc = slice( i*nn, (i+1)*nn)
+          vecs[func_slc] = ul
+          func_vals[func_slc] = np.sum( np.cos( 2*np.pi*np.dot(rec_pts, ul.T) ),
+                                      axis=0)
+
+        order = np.argsort(func_vals)[::-1]  # sort function values, largest values first
+        function_values = func_vals[order]
+        vectors = vecs[order]
+
+    else:  # fall back on original flex method
+        vectors = flex.vec3_double()
+        function_values = flex.double()
+        print "Number of search vectors: %i" % (   len(SST.angles)* len(unique_cell_dimensions))
+        for i, direction in enumerate(SST.angles):
+          for l in unique_cell_dimensions:
+            v = matrix.col(direction.dvec) * l
+            f = compute_functional(v.elems)
+            vectors.append(v.elems)
+            function_values.append(f)
+        perm = flex.sort_permutation(function_values, reverse=True)
+        vectors = vectors.select(perm)
+        function_values = function_values.select(perm)
+
+    print("made search vecs")
 
     unique_vectors = []
     i = 0
@@ -440,7 +469,7 @@ class indexer_two_color(stills_indexer):
         unique_vectors.append(v)
       i += 1
 
-    print ("chose u vecs")
+    print ("chose unique basis vecs")
     if self.params.debug:
       for i in range(N_UNIQUE_V):
         v = matrix.col(vectors[i])
@@ -484,9 +513,34 @@ class indexer_two_color(stills_indexer):
         unique_vectors)
         # max_combinations=self.params.basis_vector_combinations.max_try)
 
+    FILTER_BY_MAG = True
+    if FILTER_BY_MAG:
+      print("\n\n FILTERING BY MAG\n\n")
+      FILTER_TOL = 10,3   # within 5 percent of params and 1 percent of ang
+      target_uc = self.params.known_symmetry.unit_cell.parameters()
+      good_mats = []
+      for c in candidate_orientation_matrices:
+        uc = c.get_unit_cell().parameters()
+        comps = []
+        for i in range(3):
+          tol = 0.01* FILTER_TOL[0] * target_uc[i]
+          low = target_uc[i] - tol/2.
+          high = target_uc[i] + tol/2
+          comps.append(  low < uc[i] < high )
+        for i in range(3,6):
+          low = target_uc[i] - FILTER_TOL[1]
+          high = target_uc[i] + FILTER_TOL[1]
+          comps.append( low < uc[i] < high )
+        if all( comps):
+          print("matrix is ok:", c)
+          good_mats.append(c)
+        print("\nFilter kept %d / %d mats" % \
+              (len(good_mats), len(candidate_orientation_matrices)))
+      candidate_orientation_matrices = good_mats
+
     crystal_model, n_indexed = self.choose_best_orientation_matrix(
       candidate_orientation_matrices)
-
+    orange = 2
     if crystal_model is not None:
       crystal_models = [crystal_model]
     else:
@@ -504,3 +558,7 @@ class indexer_two_color(stills_indexer):
           #candidate_orientation_matrices[i], self.target_symmetry_primitive)
         #candidate_orientation_matrices[i] = symmetrized_model
     self.candidate_crystal_models = candidate_orientation_matrices
+
+    # memory leak somewhere... probably not here.. but just in case...
+    del _x, _y, _z, _u_vecs, order, rec_pts, vecs, func_vals, vectors, function_values
+

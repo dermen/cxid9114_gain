@@ -1,11 +1,11 @@
 """
-Ndis stands for Number-of-shots --> Data --> Index --> Simulate
+msisrp stands for mad --> spot --> index --> simulate --> refine --> predict
 
 Here we load a data image that has crystal diffraction
-then we index the crystal image using different methods
+then we spot peaks and index the crystal image
 Then simulate the indexed crystal and check overlap
-
-We do this for many shots
+Then refine using simulations
+Then predict using simulations
 
 """
 import numpy as np
