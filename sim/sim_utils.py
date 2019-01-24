@@ -297,7 +297,7 @@ class PatternFactory:
             self.beam = utils.open_flex(beam_f)
 
         self.SIM2 = nanoBragg(self.detector, self.beam, verbose=10, panel_id=panel_id)
-        self.SIM2.beamcenter_convention = convention.DIALS
+        #self.SIM2.beamcenter_convention = convention.DIALS
         self.SIM2.oversample = oversample  # oversamples the pixel ?
         self.SIM2.polarization = 1  # polarization fraction ?
         self.SIM2.F000 = 10  # should be number of electrons ?

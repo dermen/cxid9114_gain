@@ -24,7 +24,7 @@ We index many snapshots (stills) of crystals as they are injected (using GDVN) i
 
 <a name="ana"></a>
 ### Analysis goals
-The goal of the data reduction is to determine wavelength dependent structure factors for each miller index $\lambda$, $$|F_\lambda|^2$$ and to show that there is a measurable contrast between Bijouvet pairs $|F^+_\lambda|^2$ and $|F^-_\lambda|^2$ where the $\pm$ refers to the miller indices $\pm\mathbf{H}$ (note that notation of $\mathbf{H}$ is suppressed in this document). In the MAD scattering measurement, when the heavy atom substructure within a crystal undergoes photo absorption, Friedel symmetry is broken leading to differences the aforementioned contrast. There exists a geometric relationship between $F+$ and $F-$  gives rise to a set of two equations with 3 unknown quantities (the Karle and Hendrickson equations), namely the structure factor magnitudes of the protein $F_p$ and heavy atom substructure $F_a$, as well as the angular difference between protein and heavy atom phase terms, $\alpha$. As the structure factors are wavelength-dependent near the absorption energy of the heavy atoms, measuring the $F+$ and $F-$ at multiple wavelengths then determines the solution of the equations (more wavelengths are needed for each heavy atom species) and $F_p$, $F_a$, and $\alpha$ may be solved for. In turn this information is used to solve the phase of the protein.
+The goal of the data reduction is to determine wavelength dependent structure factors for each miller index $$|F_\lambda|^2$$ and to show that there is a measurable contrast between Bijouvet pairs $|F^+_\lambda|^2$ and $|F^-_\lambda|^2$ where the $\pm$ refers to the miller indices $\pm\mathbf{H}$ (note that notation of $\mathbf{H}$ is suppressed in this document). In the MAD scattering measurement, when the heavy atom substructure within a crystal undergoes photo absorption, Friedel symmetry is broken leading to differences in the aforementioned contrast. There exists a geometric relationship between $F+$ and $F-$  which gives rise to a set of two equations with 3 unknown quantities (the Karle and Hendrickson equations), namely the structure factor magnitudes of the protein $F_p$ and heavy atom substructure $F_a$, as well as the angular difference between protein and heavy atom phase terms, $\alpha$. As the structure factors are wavelength-dependent near the absorption energy of the heavy atoms, measuring the $F+$ and $F-$ at multiple wavelengths then determines the solution of the equations (more wavelengths are needed for each heavy atom species) and $F_p$, $F_a$, and $\alpha$ may be solved for. In turn this information is used to solve the phase of the protein.
 
 <a name="dataproc"></a>
 ## Data processing
@@ -75,8 +75,9 @@ Original only a few tens of thousands of hemisphere grid points were selected in
 
 <a name="idx_ass"></a>
 ###  Indexing assignment
-In order to assign an $H$ to each measured reflection, use simtbx with the optimal crystal matrix to simulate the spots at each $\lambda$, then for each strong spot in the data, and for each wavelength we find the closest simulated spot. We use that simulated spots HKL (because we simulate onto a perfect geometry), and then we check whether the fractional miller indices $H_\text{frac}$ are each within 0.1 of the whole miler index $H$, that is $|h - h_\text{frac}| < 0.1$ and likewise for $k$ and $l$. If this condition is met, it is assumed that the wavelength can index the spot. Here is the code used to test indexability
+In order to assign an $H$ to each measured reflection, use simtbx with the optimal crystal matrix to simulate the spots at each $\lambda$, then for each strong spot in the data, and for each wavelength we find the closest simulated spot. We use that simulated spots HKL (because we simulate onto a perfect geometry), and then we check whether the fractional miller indices of the measured spot $H_\text{frac}$ are each within 0.1 of the whole miler index $H$, that is $|h - h_\text{frac}| < 0.1$ and likewise for $k$ and $l$. If this condition is met, it is assumed that the wavelength can index the spot. Here is the code used to test indexability
 <a name="refinement"></a>
+
 ### Indexing Refinement
 In addition to the aforementioned basis vector grid search, here we jitter the orientation matrix determined by the indexing stage in order to obtain a better overlap with the data. This is accomplished by rocking the indexed crystal matrix about the $x$ and $y$ axis directions ($z$ is the beam direction) and using simulated diffraction patterns to computing a simple overlap between the simulation and the data, defined as
 
@@ -168,3 +169,31 @@ $$
 $$
 
 Now, we have this equation once for each wavelength $\lambda$, as the terms $u,v,a,b,c$ are all $\lambda$-dependent, and therefore by measuring at two wavelengths we can solve for $x$ and $y$.. I think there is an exact set of 4 solutions in the case of 2 wavelengths (according to wolfram alpha).
+
+
+
+### Alternative treatment for "simple spot disentanglement".
+
+Focus on one Bragg spot only, on one image. It has intensity contributions from two colors, call them Blue and Red. We will create a model to simulate the data, and then compare the simulation with experiment. This will give us a residual to use for least squares (likelihood?) refinement of parameters. We need to be clear what the unknown parameters are.
+
+Unknown parameters: $G$ an overall scale factor unique to the lattice that affords the best numerical correlation between simulation and experiment.
+
+$I_{\text{Blue}}$ the structure factor intensity at the Blue energy.
+
+$I_{\text{Red}}$ the structure factor intensity at the Red energy.
+
+The simulated intensity of the integrated spot is
+
+$$ D_{\text{spot}} = G \left [ I_{\text{Blue}} k L_{\text{Blue}} P_{\text{Blue}} + I_{\text{Red}} k L_{\text{Red}} P_{\text{Red}}\right]
+$$
+
+where
+
+$L_{\text{Channel}}$ represents the number of photons impinging on sample from the energy channel, either Blue or Red. Expressing it this way implicitly assumes that a special run of $\text{simtbx}$ is performed, for the purpose of producing the spot profile $P_{\text{Channel}}$, in which equal weight is given to each energy channel (not the normal way to run it).
+
+$k$ represents a "dummy" structure factor given in the special run of $\text{simtbx}$. The simple way to think about this dummy value is that it is the same for all Miller indices (at least those in a given resolution bin), and that it is independent of energy channel and which Bijvoet mate is chosen.
+
+$P_{\text{Channel}}$ is the summed intensities over all non-zero pixels in the simulated spot profile for a particular Miller index and a particular energy channel.
+
+Clearly there are too many unknowns $G$, $I_{\text{Blue}}$, $I_{\text{Red}}$ to be treated by a single equation. The idea is that there will be many residuals on each image, giving us the per-image $G$ factor, and there will be many observations of $I_{\text{Channel}}$ over the multi-image dataset, so we get a large overdetermined least-squares problem.
+

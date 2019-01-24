@@ -66,7 +66,7 @@ spot_par_moder.spotfinder.force_2d = True
 spot_par_moder.spotfinder.lookup.mask = "../mask/dials_mask_64panels_2.pkl"
 #spot_par_moder.spotfinder.lookup.mask = "../mask/dials_mask2d.pickle"
 
-img_f = "xtc_102.loc"
+img_f = "../../cxid9114/run102_hits.h5"
 loader = dxtbx.load(img_f)
 
 
@@ -79,7 +79,7 @@ def load_tracker_f(fname):
     return data
 
 skip_weak = True
-skip_failed = True
+skip_failed = False
 weak_shots_f = os.path.join(outdir, "weak_shots.txt")
 failed_idx_f = os.path.join(outdir, "failed_shots.txt")
 indexed_f = os.path.join(outdir, "indexed_shots.txt")
@@ -119,10 +119,10 @@ for idx in range(N):
     sad_index_params.indexing.stills.refine_all_candidates = True
     sad_index_params.indexing.method = "fft1d"
     sad_index_params.refinement.parameterisation.crystal.fix = "all"
-    sad_index_params.refinement.parameterisation.detector.fix = None
-    sad_index_params.refinement.parameterisation.detector.panels = "hierarchical"
+    sad_index_params.refinement.parameterisation.detector.fix = "all"
+    # sad_index_params.refinement.parameterisation.detector.panels = "hierarchical"
     sad_index_params.refinement.parameterisation.detector.hierarchy_level = 1
-    sad_index_params.refinement.parameterisation.beam.fix = "all"
+    sad_index_params.refinement.parameterisation.beam.fix = None
     sad_index_params.indexing.stills.refine_candidates_with_known_symmetry = True
     sad_index_params.indexing.stills.candidate_outlier_rejection = False
     sad_index_params.indexing.stills.rmsd_min_px = 8
@@ -143,6 +143,10 @@ for idx in range(N):
         failed_shots.append( idx)
         np.savetxt(failed_idx_f, failed_shots, fmt="%d")
         continue
+
+    from IPython import embed
+    embed()
+
     indexed_shots.append(idx)
     np.savetxt(indexed_f, indexed_shots, fmt="%d")
 
