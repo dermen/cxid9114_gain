@@ -32,7 +32,7 @@ def unload_compress_masks(fname):
     """
     with h5py.File(fname, "r") as h5:
         for name in h5.keys():
-            if os.path.exisits(name):
+            if os.path.exists(name):
                 print("Path %d exists!, skipping" % name)
                 continue
             data = h5[name][()]

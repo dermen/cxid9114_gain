@@ -86,7 +86,7 @@ if __name__ == "__main__":
             orient.index()
             n_indexed += 1
             idx_indexed.append(i_hit)
-        except Sorry, RunTimeError, AssertionError:
+        except (Sorry, RuntimeError, AssertionError):
             print("Could not index")
             pass
         print ("Indexed %d / %d hits, out of %d total hits" % (n_indexed, i_hit +1, Nhits))
