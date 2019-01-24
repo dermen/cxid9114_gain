@@ -8,8 +8,9 @@ import dxtbx
 from cxid9114.spots import count_spots
 from cxid9114 import utils
 
-MIN_SPOT_PER_HIT = 30
-output_dir = "."
+MIN_SPOT_PER_HIT = 20
+run = int(sys.argv[3])
+output_dir = "./run%d"%run
 
 pickle_fname = sys.argv[1]
 image_fname = sys.argv[2]
@@ -20,8 +21,14 @@ with open(pickle_fname, 'r') as f:
     found_refl = cPickle.load(f)
 refl_select = count_spots.ReflectionSelect(found_refl)
 
+image_contents = open(image_fname,"r").read()
+image_contents = image_contents.replace("run = 96", "run = %d" % run)
+new_image_fname = "run%d/loc_d9114_run%d.txt" % (run,run)
+with open( new_image_fname, "w") as out:
+    out.write( image_contents)
+
 print('Loading format')
-loader = dxtbx.load(image_fname)
+loader = dxtbx.load(new_image_fname)
 imgset = loader.get_imageset(loader.get_image_file())
 
 print('Counting spots')

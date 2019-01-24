@@ -2,6 +2,7 @@ import numpy as np
 from scipy.ndimage import morphology
 import os
 import h5py
+import pylab as plt
 
 MASK_FILE \
     =  os.path.join(os.path.dirname(__file__), 'masks.hdf5')

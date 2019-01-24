@@ -8,6 +8,8 @@ import cPickle
 from dials.algorithms.indexing.indexer import master_phil_scope\
     as indexer_phil_scope
 
+
+from dials.algorithms.indexing.fft1d import indexer_fft1d
 from dials.algorithms.indexing import stills_indexer
 from dials.algorithms.indexing.indexer import indexer_base
 from cctbx import crystal
@@ -38,6 +40,8 @@ params.indexing.known_symmetry.relative_length_tolerance = 0.3
 params.indexing.stills.rmsd_min_px = 2
 params.indexing.refinement_protocol.n_macro_cycles = 1
 params.indexing.multiple_lattice_search.max_lattices = 20
+params.indexing.basis_vector_combinations.max_refine = 5
+params.indexing.stills.indexer = 'stills'
 # ====================================================================
 
 if __name__ == "__main__":
@@ -72,14 +76,17 @@ if __name__ == "__main__":
             .format(shot_idx, i_hit + 1, Nhits, len(hit_refl)),
         sys.stdout.flush()
         # orient = INDEXER(reflections=hit_refl, imagesets=[hit_imgset], params=params)
-        orient = indexer_base.from_parameters(reflections=hit_refl,
-                                              imagesets=[hit_imgset],
-                                              params=params)
+        #orient = indexer_base.from_parameters(reflections=hit_refl,
+        #                                      imagesets=[hit_imgset],
+        #                                      params=params)
+        orient = INDEXER(reflections=hit_refl,
+                          imagesets=[hit_imgset],
+                          params=params)
         try:
             orient.index()
             n_indexed += 1
             idx_indexed.append(i_hit)
-        except Sorry, RunTimeError:
+        except (Sorry, RuntimeError, AssertionError):
             print("Could not index")
             pass
         print ("Indexed %d / %d hits, out of %d total hits" % (n_indexed, i_hit +1, Nhits))
