@@ -17,7 +17,7 @@ from cxid9114.spots import spot_utils
 from cxid9114.index.sad import params as sad_index_params
 from cxid9114.index.ddi import params as mad_index_params
 from libtbx.utils import Sorry as Sorry
-from cxid9114.spots import count_spots
+from cxid9114.spots import spot_utils
 from dials.command_line.find_spots import phil_scope as find_spots_phil_scope
 from libtbx.phil import parse
 from cxi_xdr_xes.two_color.two_color_indexer import indexer_two_color
@@ -123,7 +123,7 @@ for idx in hit_idx[5:N+6]:
     #    # index two color pattern using fft1d
     #    try:
     #        orientA = indexer_base.from_parameters(
-    #            reflections=count_spots.as_single_shot_reflections(refls, inplace=False),
+    #            reflections=spot_utils.as_single_shot_reflections(refls, inplace=False),
     #            imagesets=[isetA],
     #            params=sad_index_params)
     #        orientA.index()
@@ -137,7 +137,7 @@ for idx in hit_idx[5:N+6]:
     #    try:
     #        # try with other color
     #        orientB = indexer_base.from_parameters(
-    #            reflections=count_spots.as_single_shot_reflections(refls, inplace=False),
+    #            reflections=spot_utils.as_single_shot_reflections(refls, inplace=False),
     #            imagesets=[isetB],
     #            params=sad_index_params)
     #        orientB.index()
@@ -152,7 +152,7 @@ for idx in hit_idx[5:N+6]:
     # ==================================
     try:
         orientAB = indexer_two_color(
-            reflections=count_spots.as_single_shot_reflections(refls_strong, inplace=False),
+            reflections=spot_utils.as_single_shot_reflections(refls_strong, inplace=False),
             imagesets=[iset],
             params=mad_index_params)
         orientAB.index()
@@ -168,8 +168,8 @@ for idx in hit_idx[5:N+6]:
     crystalAB = orientAB.refined_experiments.crystals()[0]
 
 
-    refls_strong_pp = count_spots.refls_by_panelname(refls_strong)
-    refls_moder_pp = count_spots.refls_by_panelname(refls_moder)
+    refls_strong_pp = spot_utils.refls_by_panelname(refls_strong)
+    refls_moder_pp = spot_utils.refls_by_panelname(refls_moder)
 
     # now lets iterate over the panels, and then only simulate a panel
     # if it has more than 1 strong spot!

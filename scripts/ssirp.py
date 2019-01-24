@@ -23,7 +23,7 @@ from cxid9114.spots import spot_utils
 from cxid9114.index.sad import params as sad_index_params
 from cxid9114.index.ddi import params as mad_index_params
 from libtbx.utils import Sorry
-from cxid9114.spots import count_spots
+from cxid9114.spots import spot_utils
 from dials.algorithms.indexing.indexer import indexer_base
 from dials.command_line.find_spots import phil_scope as find_spots_phil_scope
 from libtbx.phil import parse
@@ -53,7 +53,7 @@ spot_par = find_spots_phil_scope.fetch(source=parse("")).extract()
 spot_par_moder = deepcopy(spot_par)
 
 par1 = 0
-mask_f = "/reg/d/psdm/cxi/cxid9114/scratch/dermen/dials_mask_64panels_2.pkl"
+mask_f = "../mask/dials_mask_64panels_2.pkl"
 
 if par1:
     spot_par.spotfinder.threshold.dispersion.global_threshold = 60.
@@ -156,7 +156,7 @@ for idx in range(N):
     
     # index two color pattern using fft1d
     orient = indexer_base.from_parameters(
-        reflections=count_spots.as_single_shot_reflections(refls_strong, inplace=False),
+        reflections=spot_utils.as_single_shot_reflections(refls_strong, inplace=False),
         imagesets=[iset],
         params=sad_index_params)
 
@@ -171,6 +171,9 @@ for idx in range(N):
         print("\n\n\t INDEXING  %d !!!\n" % idx)
         indexed_shots.append(idx)
         np.savetxt(indexed_f, indexed_shots, fmt="%d")
+
+
+
     exp_name = os.path.join(outdir, "exp_%d.json" % idx )
     refl_name = os.path.join(outdir, "refl_%d.pkl" % idx)
     orient.export_as_json(orient.refined_experiments, file_name=exp_name)
@@ -178,5 +181,7 @@ for idx in range(N):
 
     crystals[idx] = orient.refined_experiments.crystals()[0]
     Nprocessed += 1
+    from IPython import embed
+    embed()
 utils.save_flex(crystals, os.path.join(outdir, "ssirp_cryst_r102.pkl"))
 

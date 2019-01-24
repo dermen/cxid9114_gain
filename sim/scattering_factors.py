@@ -20,10 +20,12 @@ wavelens_A = 1e10 * constants.h * constants.c/ \
              (constants.electron_volt* interp_energies)
 
 
-def get_scattF(wavelen_A, pdblines, algo, dmin, ano_flag):
+def get_scattF(wavelen_A, pdb_name, algo, dmin, ano_flag):
     """
     mostly borrowed from tst_nanoBragg_basic.py
     """
+
+    pdblines = open(pdb_name, "r").readlines()
     pdb_in = iotbx.pdb.input(source_info=None, lines=pdblines)
     xray_structure = pdb_in.xray_structure_simple()
     scatts = xray_structure.scatterers()
@@ -34,15 +36,12 @@ def get_scattF(wavelen_A, pdblines, algo, dmin, ano_flag):
         sc.fdp = expected_henke.fdp()
 
     fcalc = xray_structure.structure_factors(
-        dmin=dmin,
+        d_min=dmin,
         algorithm=algo,
         anomalous_flag=ano_flag)
-    return fcalc.fcalc()
+    return fcalc.f_calc()
 
-def main(wavelens_A, wavelen_idx, jid, dmin=1.5, algo='direct', ano_flag=True):
-
-    pdb_name = "4bs7.pdb"  # this has the heavy atom replacement
-    lines = open(pdb_name, "r").readlines()
+def main(wavelens_A, wavelen_idx, jid, dmin=1.5, algo='direct', ano_flag=True, pdb_name="4bs7.pdb"):
 
     fcalc_at_wavelen = {}
 
@@ -52,7 +51,7 @@ def main(wavelens_A, wavelen_idx, jid, dmin=1.5, algo='direct', ano_flag=True):
               % (jid, waveA, i_wave + 1, len(wavelens_A)))
         fcalc_at_wavelen[i_wave] = \
             get_scattF(waveA,
-                       pdblines=lines,
+                       pdb_name=pdb_name,
                        dmin=dmin,
                        ano_flag=ano_flag,
                        algo=algo)

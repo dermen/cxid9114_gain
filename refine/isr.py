@@ -9,7 +9,7 @@ from dials.array_family import flex
 from dxtbx.datablock import DataBlockFactory
 from cxi_xdr_xes.two_color.two_color_indexer import indexer_two_color
 from cxid9114 import utils
-from cxid9114.spots import count_spots
+from cxid9114.spots import spot_utils
 from cxid9114.index.ddi import params as indexing_params
 from dials.command_line.find_spots import phil_scope as find_spots_phil_scope
 from libtbx.phil import parse
@@ -49,7 +49,7 @@ for image_fname in fnames:
     sim_data = utils.open_flex(info_fname)
 
     orient = indexer_two_color(
-        reflections=count_spots.as_single_shot_reflections(refl, inplace=False),
+        reflections=spot_utils.as_single_shot_reflections(refl, inplace=False),
         imagesets=[iset],
         params=indexing_params)
 

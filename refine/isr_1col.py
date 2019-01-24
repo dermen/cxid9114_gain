@@ -10,7 +10,7 @@ from dials.algorithms.indexing.indexer import indexer_base
 
 from cxid9114.index.sad import params as sad_index_params
 from cxid9114 import utils
-from cxid9114.spots import count_spots
+from cxid9114.spots import spot_utils
 from dials.command_line.find_spots import phil_scope as find_spots_phil_scope
 from libtbx.phil import parse
 
@@ -43,7 +43,7 @@ info_fname = image_fname.replace(".h5", ".pkl")
 sim_data = utils.open_flex(info_fname)
 
 orient = indexer_base.from_parameters(
-    reflections=count_spots.as_single_shot_reflections(refl, inplace=False),
+    reflections=spot_utils.as_single_shot_reflections(refl, inplace=False),
     imagesets=[iset],
     params=sad_index_params)
 

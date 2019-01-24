@@ -7,7 +7,7 @@ from dials.array_family import flex
 from dxtbx.imageset import MemReader, MemMasker
 from dxtbx.datablock import DataBlockFactory
 from dxtbx.imageset import ImageSet, ImageSetData
-from cxid9114.spots import count_spots, spot_utils
+from cxid9114.spots import spot_utils
 
 try:
     import psana
@@ -270,7 +270,7 @@ class GetSpectrum:
 def images_and_refls_to_simview(prefix, imgs, refls):
 
     refls_concat = spot_utils.combine_refls(refls)
-    refl_info = count_spots.group_refl_by_shotID(refls_concat)
+    refl_info = spot_utils.group_refl_by_shotID(refls_concat)
     refl_shotIds = refl_info.keys()
     Nrefl = len( refl_shotIds)
     Nimg = len( imgs)

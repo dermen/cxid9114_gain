@@ -14,7 +14,7 @@ from dials.algorithms.indexing import stills_indexer
 from dials.algorithms.indexing.indexer import indexer_base
 from cctbx import crystal
 import dxtbx
-from cxid9114.spots import count_spots
+from cxid9114.spots import spot_utils
 from libtbx.utils import Sorry
 
 params = indexer_phil_scope.extract()
@@ -51,14 +51,14 @@ if __name__ == "__main__":
     print('Loading reflections')
     with open(pickle_fname, 'r') as f:
         found_refl = cPickle.load(f)
-    refl_select = count_spots.ReflectionSelect(found_refl)
+    refl_select = spot_utils.ReflectionSelect(found_refl)
 
     print('Loading format')
     loader = dxtbx.load(image_fname)
     imgset = loader.get_imageset(loader.get_image_file())
 
     print('Counting spots')
-    idx, Nspot_at_idx = count_spots.count_spots(pickle_fname)
+    idx, Nspot_at_idx = spot_utils.count_spots(pickle_fname)
     where_hits = np.where(Nspot_at_idx > MIN_SPOT_PER_HIT)[0]
     Nhits = where_hits.shape[0]
 
