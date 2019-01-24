@@ -16,7 +16,7 @@ from cxid9114 import parameters
 from cxid9114.index.sad import params as sad_index_params
 from cxid9114.index.ddi import params as mad_index_params
 
-from cxid9114.spots import count_spots
+from cxid9114.spots import spot_utils
 from dials.command_line.find_spots import phil_scope as find_spots_phil_scope
 from libtbx.phil import parse
 from cxi_xdr_xes.two_color.two_color_indexer import indexer_two_color
@@ -83,14 +83,14 @@ sad_index_params2 = deepcopy(sad_index_params)
 #sad_index_params2.indexing.refinement_protocol.mode = "ignore"
 
 orientAB_fft1d = indexer_base.from_parameters(
-    reflections=count_spots.as_single_shot_reflections(reflAB, inplace=False),
+    reflections=spot_utils.as_single_shot_reflections(reflAB, inplace=False),
     imagesets=isetsAB,
     params=sad_index_params2)
 orientAB_fft1d.index()
 crystal_AB_fft1d = orientAB_fft1d.refined_experiments.crystals()[0]
 
 orientAB_2_fft1d = indexer_base.from_parameters(
-    reflections=count_spots.as_single_shot_reflections(reflAB, inplace=False),
+    reflections=spot_utils.as_single_shot_reflections(reflAB, inplace=False),
     imagesets=isetsAB_2,
     params=sad_index_params2)
 orientAB_2_fft1d.index()
@@ -100,7 +100,7 @@ crystalAB_2_fft1d = orientAB_2_fft1d.refined_experiments.crystals()[0]
 
 # index the 1 color patterns:
 orientA = indexer_base.from_parameters(
-    reflections=count_spots.as_single_shot_reflections(reflA, inplace=False),
+    reflections=spot_utils.as_single_shot_reflections(reflA, inplace=False),
     imagesets=isetsA,
     params=sad_index_params)
 orientA.index()
@@ -110,7 +110,7 @@ crystal_A = orientA.refined_experiments.crystals()[0]
 
 
 orientB = indexer_base.from_parameters(
-    reflections=count_spots.as_single_shot_reflections(reflB, inplace=False),
+    reflections=spot_utils.as_single_shot_reflections(reflB, inplace=False),
     imagesets=isetsB,
     params=sad_index_params)
 orientB.index()
@@ -121,7 +121,7 @@ crystal_B = orientB.refined_experiments.crystals()[0]
 # 2 color indexer of 2 color pattern
 # ==================================
 orientAB = indexer_two_color(
-    reflections=count_spots.as_single_shot_reflections(reflAB, inplace=False),
+    reflections=spot_utils.as_single_shot_reflections(reflAB, inplace=False),
     imagesets=isetsAB,
     params=mad_index_params)
 orientAB.index()

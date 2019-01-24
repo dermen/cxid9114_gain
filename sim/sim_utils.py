@@ -16,6 +16,7 @@ import copy
 deepcopy = copy.deepcopy
 import cxid9114.sim.scattering_factors as scattering_factors
 import pylab as plt
+from cxid9114 import parameters
 
 import simtbx.nanoBragg
 nanoBragg = simtbx.nanoBragg.nanoBragg
@@ -185,7 +186,6 @@ def simSIM(SIM=None, ener_eV=None, flux_per_en=None,
     :param Amatrix: A matrix for cctbx
     :return: pattern simulated
     """
-    from cxid9114 import parameters
     n_ener = len(ener_eV)
     patterns = []
     v = SIM.verbose
@@ -317,6 +317,8 @@ class PatternFactory:
         self.SIM2.seed = 9012
         self.default_fcalc = None
         self.default_interp_en = scattering_factors.interp_energies
+        self.FULL_ROI = self.SIM2.region_of_interest
+
 
     def make_pattern_default(self, crystal, spectrum, show_spectrum=False,
                      mosaic_domains=5,
@@ -402,6 +404,28 @@ class PatternFactory:
                            ret_sum=ret_sum)
         return pattern
 
+
+    def primer(self, crystal, Fcalc, energy, flux):
+        self.SIM2.wavelength_A = parameters.ENERGY_CONV / energy
+        self.SIM2.flux = flux
+        self.SIM2.Fhkl = Fcalc.amplitudes()
+        self.SIM2.Amatrix = Amatrix_dials2nanoBragg(crystal)
+        self.SIM2.raw_pixels *= 0
+        self.SIM2.region_of_interest = self.FULL_ROI
+
+    def sim_rois(self, rois, reset=True):
+        for roi in rois:
+            self.SIM2.region_of_interest = roi
+            self.SIM2.add_nanoBragg_spots()
+
+        img = self.SIM2.raw_pixels.as_numpy_array()
+        if reset:
+            self.SIM2.raw_pixels *= 0
+            self.SIM2.region_of_interest = self.FULL_ROI
+
+        return img
+
+
 def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=2,
              Ncells_abc=(5,5,5), mos_dom=20, fcalc_f="fcalc_slim.pkl",
              mos_spread=0.15, fracA=0.5, fracB=0.5, tot_flux=1e14):
@@ -454,3 +478,36 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=2,
 
     return dump
 
+
+def sim_channel(crystal, channel_en, Fcalc, detector=None,
+                panel_id=0, Gauss=False, oversample=2,
+                Ncells_abc=(5,5,5), mos_dom=20,
+                mos_spread=0.15, tot_flux=1e14):
+
+    Patts = PatternFactory(detector=detector,
+                           Ncells_abc=Ncells_abc,
+                           Gauss=Gauss,
+                           oversample=oversample,
+                           panel_id=panel_id)
+
+    en, fcalc = load_fcalc_file(fcalc_f)
+    flux = [fracA * tot_flux, fracB * tot_flux]
+    sim_patt = Patts.make_pattern2(crystal, flux, en, fcalc, mos_dom, mos_spread, False)
+    imgA, imgB = sim_patt
+
+    # OUTPUT DICTIONARY, many objects stored for bookkeeping purposes.
+    dump = {'imgA': imgA,
+            'imgB': imgB,
+            'sim_param': {'mos_dom': mos_dom,
+                          'mos_spread': mos_spread,
+                          'Gauss': Gauss,
+                          'Ncells_abc': Ncells_abc,
+                          'tot_flux': tot_flux,
+                          'fracA': fracA,
+                          'fracB': fracB,
+                          'fcalc_f': fcalc_f,
+                          'crystal': crystal
+                          }
+            }
+
+    return dump
