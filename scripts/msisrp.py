@@ -202,11 +202,12 @@ for idx in hit_idx[:N]:
     sum_res_opt = np.mean([r for r in res_opt if r is not None])
     num_idx_opt = len([r for r in res_opt if r is not None])
 
-    if sum_res_opt < sum_res_AB:
-        #  refinement worked as expected
-        cryst_model = optCrystal
-    else:
-        cryst_model = crystalAB
+    #if sum_res_opt < sum_res_AB:
+    #    #  refinement worked as expected
+    #    cryst_model = optCrystal
+    #else:
+    #    cryst_model = crystalAB
+    cryst_model = optCrystal
     # end of that HKL testing
 
     # Optional secondary refinement.. Search a finer grid with smaller spots
@@ -230,19 +231,6 @@ for idx in hit_idx[:N]:
     #                     scanY=np.arange(-.1, .1, .01))
 
 
-    # save the crystal models and other data for later use and debugging
-    utils.save_flex({"crystalAB": crystalAB,
-                     "res_opt": res_opt,
-                     "color_opt": color_opt,
-                     "resAB": resAB,
-                     "colorAB": colorAB,
-                     "beamA": beamA,
-                     "beamB": beamB,
-                     "detector": iset.get_detector(0),
-                     "crystalOpt": optCrystal,
-                     "overlap": overlap,
-                     "refls_strong": refls_strong },  "crystals%d.pkl" % idx)
-
     # now simulate the cryst_model
     # and we can use positions of the of the simulated pattern
     # to integrate the pixels on the camera
@@ -250,8 +238,10 @@ for idx in hit_idx[:N]:
     simsAB = sim_utils.sim_twocolors2(
         cryst_model, iset.get_detector(0), iset.get_beam(0), [5000, None],
         [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
-        [1e14, 1e14], pids=[0], Gauss=False, oversample=4,
+        [1e14, 1e14], pids=None, Gauss=False, oversample=4,
         Ncells_abc=(20,20,20), mos_dom=20, mos_spread=0.0)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
+
+    sim_utils.save_twocolor(simsAB, iset, "sim64_%d.h5" % idx, force=0)
 
     # Now, few things to do here:
     # The above simulation object has 128 images
@@ -262,7 +252,7 @@ for idx in hit_idx[:N]:
     # This will guide where we should integrate the raw data
 
     # In order to find the color-composited spot
-    # we will apply a median filter to smear any potentially
+    # we will apply a filter to smear any potentially
     # partially overlapping spots merge into a
     # single detectable region
 
@@ -306,25 +296,42 @@ for idx in hit_idx[:N]:
         qB = reflsQB[i]
         if c =="A":
             dist, iA = treeA.query(qA)
-            dist_vec = treeA.data[iA] - qA
+            dist_vec = qA - treeA.data[iA]
         elif c == "B":
             dist, iB = treeB.query(qB)
-            dist_vec = treeB.data[iB] - qB
+            dist_vec = qB - treeB.data[iB]
         else:
             continue
         dists.append( dist)
         dist_vecs.append( dist_vec)
 
-
-
-
-
-
-
     # spot data on composited color images
-    spot_data_compo = spot_utils.get_spot_data_multipanel(
-        np.array(simsAB[0]) + np.array(simsAB[1]), thresh=0,
+    spot_data_combo = spot_utils.get_spot_data_multipanel(
+        np.array(simsAB[0]) + np.array(simsAB[1]),
+        detector=iset.get_detector(0),
+        beam=iset.get_beam(0),
+        crystal=cryst_model,
+        thresh=0,
         filter=scipy.ndimage.filters.gaussian_filter, sigma=1)
+
+    # save the crystal models and other data for later use and debugging
+    utils.save_flex({"crystalAB": crystalAB,
+                     "res_opt": res_opt,
+                     "color_opt": color_opt,
+                     "resAB": resAB,
+                     "colorAB": colorAB,
+                     "beamA": beamA,
+                     "beamB": beamB,
+                     "detector": iset.get_detector(0),
+                     "crystalOpt": optCrystal,
+                     "overlap": overlap,
+                     "spot_dataA": spot_dataA,
+                     "spot_dataB": spot_dataB,
+                     "dist_vecs": dist_vecs,
+                     "dists": dists,
+                     "spot_data_combo": spot_data_combo,
+                     "refls_strong": refls_strong },  "crystals%d.pkl" % idx)
+
 
     # finding moderately-strong spots
     #refls_mod = flex.reflection_table.from_observations(dblock, spot_par_moder)
