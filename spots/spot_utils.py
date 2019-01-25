@@ -13,24 +13,36 @@ from scipy.spatial import cKDTree
 from dials.array_family import flex
 
 
-def xy_to_hkl(x,y, detector, beam, crystal, as_numpy_arrays=True):
+def multipanel_refls_to_hkl(refls, detector, beam, crystal):
+    panel_refls = refls_by_panelname(refls)
+    all_h = []
+    all_hi  = []
+    for pid in panel_refls:
+        prefls = panel_refls[pid]
+        h,hi = refls_to_hkl(prefls, detector[pid], beam, crystal)
+        all_h.append(h)
+        all_hi.append(hi)
+    return np.vstack(all_h), np.vstack(all_hi)
+
+
+def refls_to_hkl(refls, detector_node, beam, crystal, as_numpy_arrays=True):
     """
     convert pixel xy to miller index data
 
-    :param x: fast scan coord of spot, array-like
-    :param y:
-    :param detector:  dxtbx detector model
+    :param refls:  reflecton table for a panel
+    :param detector_node:  dxtbx detector Panel (detector Node)
     :param beam:  dxtbx beam model
     :param crystal: dxtbx crystal model
     :param as_numpy_arrays: return data as numpy arrays
-    :return: if as_numpy twp Nx3 numpy arrays are returned
+    :return: if as_numpy two Nx3 numpy arrays are returned
         (one for fractional and one for whole HKL)
         else dictionary of hkl_i (nearest) and hkl (fractional)
     """
     Ai = sqr(crystal.get_A()).inverse()
     Ai = Ai.as_numpy_array()
+    x,y,_ = xyz_from_refl(refls, key='xyzobs.px.value')
 
-    q_vecs = xy_to_q( x,y, detector, beam)
+    q_vecs = xy_to_q( x,y, detector_node, beam)
 
     HKL = np.dot( Ai, q_vecs.T)
     HKLi = map( lambda h: np.ceil(h-0.5), HKL)
@@ -39,18 +51,18 @@ def xy_to_hkl(x,y, detector, beam, crystal, as_numpy_arrays=True):
     else:
         return {'hkl':HKL, 'hkl_i': HKLi}
 
-def xy_to_q(x,y, detector, beam, oldmethod=False, panel_id=0):
+
+def xy_to_q(x,y, panel, beam, oldmethod=False):
     """
     convert pixel coords to q-vectors
 
     :param x,y:  pixel coordinates of spots as separate lists/arrays
                 x should be the fast-scan coord
-    :param detector: dxtbx detector model
+    :param panel: dxtbx detector Panel (detectorNode)
     :param beam:  dxtbx beam model
-    :param method1: whether to use method 1 below..
+    :param oldmethod: whether to use method 1 below..
     :return: the Q-vectors corresponding to the spots
     """
-    panel = detector[panel_id]
     if oldmethod:
         pixsizeFS, pixsizeSS = panel.get_pixel_size()[0]
         orig = np.array(panel.get_origin())
@@ -149,19 +161,19 @@ def add_xy_to_ax_as_patches(xy, patch_type, patch_sty, ax, sizes=None):
     ax.add_collection(patch_coll)
 
 
-def make_color_data_object(x, y, beam, crystal, detector):
+def make_color_data_object(refls, beam, crystal, detector):
     """
     make the values expected in the `color_data` dictionary parameter passed to
     the `compute_indexability` method.
-    :param x:
-    :param y:
+    :param refls:
     :param beam:
     :param crystal:
     :param detector:
     :return:
     """
+    x,y,_ = xyz_from_refl(refls)
     spots = zip(x,y)
-    hkl, hkli = xy_to_hkl(x, y, detector, beam, crystal)
+    hkl, hkli = refls_to_hkl(refls, detector, beam, crystal)
     data = {'spots': spots,
             'tree': cKDTree(spots),
             'H': hkl,
@@ -181,7 +193,7 @@ def compute_indexability(refls, color_data, hkl_tol=0.15):
     # from the simulations
     data_H = {}
     for c, cdata in color_data.iteritems():
-        data_hkl, data_hkli = xy_to_hkl(xdata, ydata,
+        data_hkl, data_hkli = refls_to_hkl(refls,
                                         cdata['detector'],
                                         cdata['beam'],
                                         cdata['crystal'])
@@ -262,7 +274,7 @@ def get_spot_data(img, thresh=0):
 def plot_overlap(spotdataA, spotdataB, refls):
     """
 
-    :param spotdataA:
+    :param spotdataA: return value of get_spot_data method
     :param spotdataB:
     :param refls:
     :return:
@@ -335,7 +347,7 @@ def count_roi_overlap( rois, img_size):
     return counts
 
 
-def get_spot_roi( refl, szx=10, szy=10):
+def get_spot_roi( refl, dxtbx_image_size, szx=10, szy=10):
     """
     get the regions of interest around each reflection
     :param refl: reflection table
@@ -345,10 +357,17 @@ def get_spot_roi( refl, szx=10, szy=10):
     specifying the ROIs to be used with simtbx
     """
     x,y,_ = xyz_from_refl(refl)
-    rois = [((int(i) - szx, int(i) + szx), (int(j) - szy, int(j) + szy))
-            for i, j in zip(x, y)]
-    return rois
+    rois = []
+    for i,j in zip(x,y):
+        i1 = max(int(i)-szx,0)
+        i2 = min(int(i)+szx, dxtbx_image_size[0])
 
+        j1 = max( int(j)-szy,0)
+        j2 = min( int(j)+szy, dxtbx_image_size[1])
+
+        rois.append( ((i1,i2),(j1,j2)) )
+
+    return rois
 
 
 def count_spots(pickle_fname):

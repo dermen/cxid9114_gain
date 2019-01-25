@@ -13,8 +13,6 @@ from cxid9114.sim import sim_utils
 from cxid9114 import utils
 from copy import deepcopy
 from cxid9114 import parameters
-from cxid9114.spots import spot_utils
-from cxid9114.index.sad import params as sad_index_params
 from cxid9114.index.ddi import params as mad_index_params
 from libtbx.utils import Sorry as Sorry
 from cxid9114.spots import spot_utils
@@ -24,17 +22,8 @@ from cxi_xdr_xes.two_color.two_color_indexer import indexer_two_color
 import dxtbx
 from dxtbx.datablock import DataBlockFactory
 from dials.array_family import flex
-from dxtbx.model import Detector
-
-# load a dummie hierarchy and store in template
-# so we can use it to do simtbx in multi panel mode
-simple_det = utils.open_flex(sim_utils.det_f)
-dummie_hier = simple_det.to_dict()["hierarchy"]
-#det_templ = {"hierarchy": simple_det.to_dict()["hierarchy"]}
-
-fcalc_f = "/Users/dermen/cxid9114_gain/sim/fcalc_slim.pkl"
-
-MULTI_PANEL = True
+from cxid9114.refine import jitter_refine
+from cxid9114.refine import metrics
 
 spot_par = find_spots_phil_scope.fetch(source=parse("")).extract()
 spot_par_moder = deepcopy(spot_par)
@@ -48,7 +37,6 @@ spot_par.spotfinder.filter.min_spot_size = 2
 spot_par.spotfinder.force_2d = True
 spot_par.spotfinder.lookup.mask = "../mask/dials_mask_64panels_2.pkl"
 
-
 spot_par_moder.spotfinder.threshold.dispersion.global_threshold = 56.
 spot_par_moder.spotfinder.threshold.dispersion.gain = 28.
 spot_par_moder.spotfinder.threshold.dispersion.kernel_size = [1,1]
@@ -57,59 +45,41 @@ spot_par_moder.spotfinder.threshold.dispersion.sigma_background = 2.5
 spot_par_moder.spotfinder.filter.min_spot_size = 1
 spot_par_moder.spotfinder.force_2d = True
 spot_par_moder.spotfinder.lookup.mask = "../mask/dials_mask_64panels_2.pkl"
-#spot_par_moder.spotfinder.lookup.mask = "../mask/dials_mask2d.pickle"
-
 try_fft1d = False
 img_f = "/Users/dermen/cxid9114/multi_run62_hits_wtime.h5"
-# img_f = "/Users/dermen/cxid9114/run62_hits_wtime.h5"
 loader = dxtbx.load(img_f)
-
 detector = loader.get_detector(0)
 
 info_f = utils.open_flex("../index/run62_idx_processed.pkl")
 hit_idx = info_f.keys()
-from IPython import embed
-embed()
+
+ENERGIES = [parameters.ENERGY_LOW, parameters.ENERGY_HIGH]  # colors of the beams
+FF = [5000, None]  # Setting structure factors takes long time in nanoBragg, so
+                   # unless you want energy-dependent structure factors
+                   # you need only provide one number -or- one structure factor flex miller table
+                   # and the computer will know to preserve that for all beam colors
+FLUX = [1e14, 1e14]  # fluxes of the beams
+
+#from cxid9114.sim import scattering_factors
+#Fcalcs = scattering_factors.get_scattF( parameters.WAVELEN_LOW,
+#                                     pdb_name="../sim/4bs7.pdb",
+#                                     algo='direct',
+#                                     dmin=1.5, ano_flag=True)
+# FF = [Fcalcs, None]
+
 N = 20  # process 20
-A_results, B_results, AB_results = [],[],[]
-for idx in hit_idx[5:N+6]:
+for idx in hit_idx[:N]:
 
     iset = loader.get_imageset( img_f)[ idx:idx+1]
+
     dblock = DataBlockFactory.from_imageset(iset)[0]
-
     refls_strong = flex.reflection_table.from_observations(dblock, spot_par)
-    # refls = info_f[idx]['refl']
 
-    # TODO: add a new method of retrieving these values
-    fracA = info_f[idx]['fracA']
-    fracB = info_f[idx]['fracB']
+    waveA = parameters.ENERGY_CONV / ENERGIES[0]
+    waveB = parameters.ENERGY_CONV / ENERGIES[1]
 
-    cryst_orig = info_f[idx]['crystals'][0]
-
-    # load a test crystal
-    #crystal = utils.open_flex( sim_utils.cryst_f )
-
-    # fraction of two color energy
-    # simulate the pattern
-    #Patts = sim_utils.PatternFactory()
-    en, fcalc = sim_utils.load_fcalc_file("../sim/fcalc_slim.pkl")
-    flux = [fracA * 1e14, fracB * 1e14]
-    #imgA, imgB = Patts.make_pattern2(crystal, flux, en, fcalc, 20, 0.1, False)
-
-    # ==================================
-    # 2 color indexer of 2 color pattern
-    # ==================================
-    sad_index_params.indexing.multiple_lattice_search.max_lattices = 1
-    sad_index_params.indexing.stills.refine_all_candidates = False
-    sad_index_params.indexing.stills.refine_candidates_with_known_symmetry = False
-    sad_index_params.indexing.stills.candidate_outlier_rejection =  False
-    sad_index_params.indexing.stills.rmsd_min_px = 10
-    sad_index_params.indexing.refinement_protocol.mode = "ignore"
-    waveA = parameters.ENERGY_CONV / en[0]
-    waveB = parameters.ENERGY_CONV / en[1]
-
-    beamA = deepcopy( iset.get_beam())
-    beamB = deepcopy( iset.get_beam())
+    beamA = deepcopy(iset.get_beam())
+    beamB = deepcopy(iset.get_beam())
 
     beamA.set_wavelength(waveA)
     beamB.set_wavelength(waveB)
@@ -119,8 +89,14 @@ for idx in hit_idx[5:N+6]:
     isetA.set_beam(beamA)
     isetB.set_beam(beamB)
 
-    #if try_fft1d:
-    #    # index two color pattern using fft1d
+    ##if try_fft1d:
+    #    sad_index_params.indexing.multiple_lattice_search.max_lattices = 1
+    #    sad_index_params.indexing.stills.refine_all_candidates = False
+    #    sad_index_params.indexing.stills.refine_candidates_with_known_symmetry = False
+    #    sad_index_params.indexing.stills.candidate_outlier_rejection = False
+    #    sad_index_params.indexing.stills.rmsd_min_px = 10
+    #    sad_index_params.indexing.refinement_protocol.mode = "ignore"
+    ##    # index two color pattern using fft1d
     #    try:
     #        orientA = indexer_base.from_parameters(
     #            reflections=spot_utils.as_single_shot_reflections(refls, inplace=False),
@@ -157,44 +133,99 @@ for idx in hit_idx[5:N+6]:
             params=mad_index_params)
         orientAB.index()
     except (Sorry, RuntimeError):
-        AB_results.append(None)
         continue
 
-    if not orientAB.refined_experiments.crystals():
+    if not orientAB.refined_experiments.crystals():  # this would probably never happen...
         continue
-
-    refls_moder = flex.reflection_table.from_observations(dblock, spot_par_moder)
 
     crystalAB = orientAB.refined_experiments.crystals()[0]
 
+    # identify the panels with the strong spots
+    # for these will be used in refinement step below
+    reflsPP = spot_utils.refls_by_panelname(refls_strong)
+    pids = [i for i in reflsPP if len(reflsPP[i]) > 0 ]  # refine on these panels only
+    pan_imgs = [iset.get_raw_data(0)[pid].as_numpy_array()
+                for pid in pids]
 
-    refls_strong_pp = spot_utils.refls_by_panelname(refls_strong)
-    refls_moder_pp = spot_utils.refls_by_panelname(refls_moder)
+    # helper wrapper for U-matrix grid search based refinement
+    # `scanZ = ...` can also be passed as an argument, to jitter rotation
+    # about the Z (beam) axis
+    jitt_out = jitter_refine.jitter_panels(panel_ids=pids,  # we only simulate the pids with strong spots
+                         crystal=crystalAB,
+                         refls=refls_strong,
+                         det=detector,
+                         beam=iset.get_beam(0),
+                         FF = FF,
+                         en = ENERGIES,
+                         data_imgs = pan_imgs,
+                         flux = FLUX,
+                         ret_best=False,
+                         scanX=np.arange(-.35, .35, .025),  # these seemed to be sufficient ranges
+                         scanY=np.arange(-.35, .35, .025))
 
-    # now lets iterate over the panels, and then only simulate a panel
-    # if it has more than 1 strong spot!
-    sim_res = {}
-    for i_pan in range(64):
-        if i_pan not in refls_strong_pp:
-            continue
+    # select the refined matrix based on overlap superposition
+    # overlap is a metric used in the JitterFactory (wrapped into jitter_panels)
+    # which checks agreement between data panels and simulated panels
+    overlap = np.sum([jitt_out[pid]['overlaps'] for pid in jitt_out], axis=0)
+    max_pos = np.argmax(overlap)
+    optA = jitt_out[jitt_out.keys()[0]]["A_seq"][max_pos]  # just grab the first A_seq cause same sequence is tested on all panels
 
-        n_strong = len(refls_strong_pp[i_pan])
-        if n_strong < 2:
-            continue
+    # Now we have an indexing solution that is somewhat refined
+    # make a new refined crystal
+    optCrystal = deepcopy(crystalAB)
+    optCrystal.set_A(optA)
 
-        dump = sim_utils.sim_twocolors(crystalAB,
-                                    detector=detector,
-                                    panel_id=i_pan,
-                                    mos_dom=20,
-                                    fcalc_f = fcalc_f,
-                                    Gauss=False,
-                                    mos_spread=0.1,
-                                    fracA=fracA,
-                                    fracB=fracB)
+    # TODO: include a metric to verify that optCrystal
+    # is indeed optimized. I guess this is already done via the refinement overlap
+    # but lets introduce another metric that evaluates overall
+    # indexability of the solution
+    # Simplest metrix is maybe the overal
+    # residual HKL given either crystalAB or optCrystal
 
-        sim_res[i_pan] = dump
-        from IPython import embed
-        embed
+    resAB,colorAB = metrics.likeliest_color_and_res(
+        refls_strong, crystalAB,
+        iset.get_detector(0),beamA, beamB)
+
+    sum_res_AB = np.mean([r for r in resAB if r is not None])
+    num_idx_AB = len([r for r in resAB if r is not None])
+
+    res_opt,color_opt = metrics.likeliest_color_and_res(
+        refls_strong, optCrystal,
+        iset.get_detector(0),beamA, beamB)
+    sum_res_opt = np.mean([r for r in res_opt if r is not None])
+    num_idx_opt = len([r for r in res_opt if r is not None])
+
+    if sum_res_opt < sum_res_AB:
+        #  refinement worked as expected
+        cryst_model = optCrystal
+    else:
+        cryst_model = crystalAB
+    # end of that HKL testing
+
+
+    # save the crystal models for later use
+    utils.save_flex({"crystalAB": crystalAB,
+                     "beamA": beamA,
+                     "beamB": beamB,
+                     "detector": iset.get_detector(0),
+                     "crystalOpt": optCrystal,
+                     "overlap": overlap,
+                     "refls_strong": refls_strong },  "crystals%d.pkl" % idx)
+
+
+    # now simulate the cryst_model
+    # and we can use positions of the of the simulated pattern
+    # to integrate the pixels on the camera
+    # and set up the two color disentangler
+    simsAB = sim_utils.sim_twocolors2(
+        optCrystal, iset.get_detector(0), iset.get_beam(0), [5000, None],
+        [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
+        [1e14, 1e14], Gauss=False, oversample=2,
+        Ncells_abc=(10,10,10), mos_dom=20, mos_spread=0.04)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
+
+    # finding moderately-strong spots
+    #refls_mod = flex.reflection_table.from_observations(dblock, spot_par_moder)
+    #refls_modPP = spot_utils.refls_by_panelname(refls_mod)  # per panel
 
         #imgA, imgB = dump['imgA'], dump['imgB']
         #spotsA = spot_utils.get_spot_data(imgA, thresh=1e-6)
@@ -210,8 +241,6 @@ for idx in hit_idx[5:N+6]:
 
         #indexa = spot_utils.compute_indexability(refls_strong, color_data, hkl_tol=0.15)
         #indexa_moder = spot_utils.compute_indexability(refls_moder, color_data, hkl_tol=0.1)
-
-    AB_results.append(dump)
 
 
 from IPython import embed

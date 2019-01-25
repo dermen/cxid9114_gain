@@ -5,6 +5,7 @@ interp1d = scipy.interpolate.interp1d
 import numpy as np
 import inspect
 import dxtbx
+import cctbx
 import cxid9114.utils as utils
 import dials.array_family.flex as flex
 import scitbx
@@ -281,7 +282,8 @@ def simulate_xyscan_result(scan_data_file, prefix=None):
 class PatternFactory:
 
     def __init__(self, crystal=None, detector=None, beam=None,
-                 Ncells_abc=(10,10,10), Gauss=False, oversample=2, panel_id=0):
+                 Ncells_abc=(10,10,10), Gauss=False, oversample=2, panel_id=0,
+                 recenter=True):
         """
         :param crystal:  dials crystal model
         :param detector:  dials detector model
@@ -289,6 +291,7 @@ class PatternFactory:
         """
         self.beam = beam
         self.detector = detector
+        self.panel_id = panel_id
         if crystal is None:
             crystal = utils.open_flex(cryst_f)
         if self.detector is None:
@@ -318,6 +321,9 @@ class PatternFactory:
         self.default_fcalc = None
         self.default_interp_en = scattering_factors.interp_energies
         self.FULL_ROI = self.SIM2.region_of_interest
+
+        if recenter:  # FIXME: I am not sure why this seems to be necessary to preserve geom
+            self.SIM2.beam_center_mm = detector[panel_id].get_beam_centre(beam.get_s0())
 
 
     def make_pattern_default(self, crystal, spectrum, show_spectrum=False,
@@ -405,10 +411,13 @@ class PatternFactory:
         return pattern
 
 
-    def primer(self, crystal, Fcalc, energy, flux):
+    def primer(self, crystal, energy, flux, F=None):
         self.SIM2.wavelength_A = parameters.ENERGY_CONV / energy
         self.SIM2.flux = flux
-        self.SIM2.Fhkl = Fcalc.amplitudes()
+        if isinstance(F, cctbx.miller.array):
+            self.SIM2.Fhkl = F.amplitudes()
+        elif F is not None:
+            self.SIM2.default_F = F
         self.SIM2.Amatrix = Amatrix_dials2nanoBragg(crystal)
         self.SIM2.raw_pixels *= 0
         self.SIM2.region_of_interest = self.FULL_ROI
@@ -477,6 +486,41 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=2,
             }
 
     return dump
+
+
+def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes,
+                   Gauss=False, oversample=2, Ncells_abc=(5,5,5), mos_dom=2, mos_spread=0.15):
+    Npan = len(detector)
+    Nchan = len( energies)
+
+    # initialize output form
+    panel_imgs = {}
+    for i_en in range( Nchan):
+        panel_imgs[i_en] = []
+
+    for i_pan in range(Npan):
+        PattF = PatternFactory(detector=detector,
+                               beam=beam,
+                               panel_id=i_pan,
+                               recenter=True,
+                               Gauss=Gauss,
+                               Ncells_abc=Ncells_abc,
+                               oversample=oversample)
+
+        PattF.adjust_mosaicity(mos_dom, mos_spread)
+        for i_en in range(Nchan):
+            PattF.primer(crystal=crystal,
+                         energy=energies[i_en],
+                         F=fcalcs[i_en],
+                         flux=fluxes[i_en])
+
+            color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True)
+            panel_imgs[i_en].append( color_img)
+
+    # arange into separate channels
+    return panel_imgs
+
+
 
 
 def sim_channel(crystal, channel_en, Fcalc, detector=None,
