@@ -6,7 +6,7 @@ two color data
 
 from cxid9114.spots import spot_utils
 import numpy as np
-
+from scipy.spatial import cKDTree
 
 def hkl_residue_twocolor(refls, cryst, det, beamA, beamB ):
     """
@@ -75,4 +75,49 @@ def likeliest_color_and_res(refls, cryst, det, beamA, beamB, hkl_tol=0.1):
     return likeliest_resid, likeliest_color
 
 
+def q_vecs_from_spotData(spotData):
+    """
 
+    :param spotData:
+    :return:
+    """
+    all_q_vecs = []
+    for pid in spotData:
+        if spotData[pid] is None:
+            continue
+        q_vecs = spotData[pid]['q_vecs']
+        all_q_vecs.append( q_vecs)
+    return np.vstack(all_q_vecs)
+
+def sim_to_data_Qdeviation(spotDataA, spotDataB, refls, detector, beam):
+    """
+
+    :param spotDataA:
+    :param spotDataB:
+    :param refls:
+    :param detector:
+    :param beam:
+    :return:
+    """
+    reflsPP = spot_utils.refls_by_panelname(refls)
+    data_qvecs = []
+    for pid in reflsPP:
+        R = reflsPP[pid]
+        x,y,z = spot_utils.xyz_from_refl(R)
+        qvecs = spot_utils.xy_to_q(x, y, detector[pid], beam)
+        data_qvecs.append( qvecs)
+    data_qvecs = np.vstack(data_qvecs)
+
+    simA_qvecs = q_vecs_from_spotData(spotDataA)
+    simB_qvecs = q_vecs_from_spotData(spotDataB)
+
+    treeA = cKDTree(simA_qvecs)
+    treeB = cKDTree(simB_qvecs)
+
+    distA, idxA = treeA.query(data_qvecs , k=1)
+    distB, idxB = treeB.query(data_qvecs , k=1)
+
+    nnA = treeA.data[idxA]
+    nnB = treeB.data[idxB]
+
+    return distA, nnA, distB, nnB

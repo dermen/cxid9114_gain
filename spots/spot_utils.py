@@ -7,6 +7,7 @@ import cPickle as pickle
 from copy import deepcopy
 import numpy as np
 from scipy import ndimage
+MAX_FILT = ndimage.maximum_filter
 
 from scitbx.matrix import sqr
 from scipy.spatial import cKDTree
@@ -29,7 +30,7 @@ def refls_to_hkl(refls, detector_node, beam, crystal, as_numpy_arrays=True):
     """
     convert pixel xy to miller index data
 
-    :param refls:  reflecton table for a panel
+    :param refls:  reflecton table for a panel or a tuple of (x,y)
     :param detector_node:  dxtbx detector Panel (detector Node)
     :param beam:  dxtbx beam model
     :param crystal: dxtbx crystal model
@@ -40,8 +41,10 @@ def refls_to_hkl(refls, detector_node, beam, crystal, as_numpy_arrays=True):
     """
     Ai = sqr(crystal.get_A()).inverse()
     Ai = Ai.as_numpy_array()
-    x,y,_ = xyz_from_refl(refls, key='xyzobs.px.value')
-
+    if isinstance(refls, flex.reflection_table):
+        x,y,_ = xyz_from_refl(refls, key='xyzobs.px.value')
+    else:
+        x,y = refls
     q_vecs = xy_to_q( x,y, detector_node, beam)
 
     HKL = np.dot( Ai, q_vecs.T)
@@ -50,6 +53,16 @@ def refls_to_hkl(refls, detector_node, beam, crystal, as_numpy_arrays=True):
         return np.vstack(HKL).T, np.vstack(HKLi).T
     else:
         return {'hkl':HKL, 'hkl_i': HKLi}
+
+
+def multipanel_refls_to_q(refls, detector, beam):
+    R = refls_by_panelname(refls)
+    all_q = []
+    for pid in R:
+        x,y,z = xyz_from_refl(R[pid])
+        q_vecs = xy_to_q(x,y,detector[pid], beam)
+        all_q.append( q_vecs)
+    return np.vstack( all_q)
 
 
 def xy_to_q(x,y, panel, beam, oldmethod=False):
@@ -247,15 +260,26 @@ def compute_indexability(refls, color_data, hkl_tol=0.15):
     return indexability
 
 
-def get_spot_data(img, thresh=0):
+def get_spot_data(img, thresh=0, filter=None, **kwargs):
     """
-    TODO: implement this using flex
+    TODO: make a elx.refltable return option
+    Kwargs are passed to the filter used to smear the spots
     :param img: numpy image, assumed to be simulated
     :param thresh: minimum value, this should be  >= the minimum intensity separating spots..
+    :param filter: a filter to apply to the data, typically one of scipy.ndimage
+        the kwargs will be passed along to this filter
     :return: useful spot dictionary, numpy version of a reflection table..
     """
-    labimg, nlab = ndimage.label(img > thresh)
-    bboxes = ndimage.find_objects( labimg)
+
+    if filter is not None:
+        labimg, nlab = ndimage.label( filter(img, **kwargs) > thresh)
+    else:
+        labimg, nlab = ndimage.label( img > thresh)
+
+    if nlab == 0:
+        return None
+
+    bboxes = ndimage.find_objects(labimg)
 
     comIpos = ndimage.center_of_mass(img, labimg, range(1, nlab+1))
     maxIpos = ndimage.maximum_position(img, labimg, range(1, nlab+1))
@@ -269,6 +293,7 @@ def get_spot_data(img, thresh=0):
             'maxI': maxI,
             'meanI': meanI,
             'varI': varI}
+
 
 
 def plot_overlap(spotdataA, spotdataB, refls):
@@ -459,6 +484,69 @@ def select_refl(refl, shot_idx):
     n = len( refl)
     select_me = flex.bool([refl['bbox'][i][4] == int(shot_idx) for i in range(n)])
     return refl.select(select_me)
+
+
+
+def get_spot_data_multipanel(data, detector, beam, crystal,
+                             pids=None, thresh=0, filter=None,  **kwargs):
+    """
+    TODO: flex.refltable return option
+
+    This is a function for taking images (typically simulated) and
+    grabbing the spots
+
+    :param data:
+    :param detector:
+    :param beam:
+    :param crystal:
+    :param pids:
+    :param thresh:
+    :param filter:
+    :param kwargs:
+    :return:
+    """
+
+    if pids == None:
+        pids = range (len(data))
+    else:
+        assert( len(pids) == len(data))
+
+    spot_data = {}
+    all_q = []
+    all_h = []
+    all_hi = []
+    for pid in pids:
+        img = data[pid]
+        spot_data[pid] = get_spot_data(
+            img,
+            thresh=thresh,
+            filter=filter,
+            **kwargs)
+        if spot_data[pid] is None:
+            continue
+
+        y,x = zip(*spot_data[pid]['comIpos'])
+        detnode = detector[pid]
+        q_vecs = xy_to_q(x,y,detnode, beam)
+        spot_data[pid]["q_vecs"] = q_vecs
+
+        h, hi = refls_to_hkl((x,y), detnode, beam, crystal)
+
+        spot_data[pid]['H'] = h
+        spot_data[pid]['Hi'] = hi
+
+        all_h.append(h)
+        all_hi.append(hi)
+        all_q.append(q_vecs)
+    if all_q:
+        spot_data["Q"] = np.vstack(all_q)
+    if all_h:
+        spot_data["H"] = np.vstack( all_h)
+        spot_data["Hi"] = np.vstack( all_hi)
+
+    return spot_data
+
+
 
 if __name__=="__main__":
     plot = True

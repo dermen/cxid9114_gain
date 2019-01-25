@@ -113,7 +113,8 @@ class JitterFactory:
 
 
 def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
-                  ret_best=False, scanX=None, scanY=None, scanZ=None, **kwargs):
+                  ret_best=False, scanX=None, scanY=None, scanZ=None,
+                  mos_dom=1, mos_spread=0.01, **kwargs):
     """
     Helper function for doing fast refinements by rocking the U-matrix
     portion of the crystal A matrix
@@ -137,6 +138,8 @@ def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
         from each scan
     :param scanX: scan angles for the X-rotation matrix
         (same for scanY and Z, note these are lab frame notataions)
+    :param mos_dom, number os mosaic domains in crystal
+    :param mos_spread, angular spread of reflections from mosaicity (tangential component)
     :return: best A matrix , or else a bunch of data for each panel
         that can be used to select best A matrix
     """
@@ -162,6 +165,7 @@ def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
             P = sim_utils.PatternFactory( detector=det, beam=beam,
                                           panel_id=pid, recenter=True,
                                           **kwargs)
+            P.adjust_mosaicity(mos_dom, mos_spread)
             P.primer( crystal, en[i_color], flux[i_color], FF[i_color])
             P.SIM2.verbose = 0
             JR = JitterFactory(crystal, P, R[pid], dat)

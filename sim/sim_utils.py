@@ -18,6 +18,7 @@ deepcopy = copy.deepcopy
 import cxid9114.sim.scattering_factors as scattering_factors
 import pylab as plt
 from cxid9114 import parameters
+import h5py
 
 import simtbx.nanoBragg
 nanoBragg = simtbx.nanoBragg.nanoBragg
@@ -375,6 +376,12 @@ class PatternFactory:
         self.SIM2.set_mosaic_blocks(mosaic_blocks(self.SIM2.mosaic_spread_deg,
                                                     self.SIM2.mosaic_domains))
 
+    def adjust_divergence(self, div_tuple=(0,0)):
+        self.SIM2.divergence_hv_mrad = div_tuple
+
+    def adjust_dispersion(self, pct=0.):
+        self.SIM2.dispersion_pct = pct
+
     def make_pattern2(self, crystal, flux_per_en, energies_eV, fcalcs_at_energies,
                       mosaic_domains=None, mosaic_spread=None, ret_sum=True, Op=None):
         """
@@ -488,8 +495,9 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=2,
     return dump
 
 
-def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes,
-                   Gauss=False, oversample=2, Ncells_abc=(5,5,5), mos_dom=2, mos_spread=0.15):
+def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
+                   Gauss=False, oversample=2, Ncells_abc=(5,5,5),
+                   div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15):
     Npan = len(detector)
     Nchan = len( energies)
 
@@ -498,7 +506,9 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes,
     for i_en in range( Nchan):
         panel_imgs[i_en] = []
 
-    for i_pan in range(Npan):
+    if pids is None:
+        pids = range( Npan)
+    for i_pan in pids:
         PattF = PatternFactory(detector=detector,
                                beam=beam,
                                panel_id=i_pan,
@@ -508,6 +518,8 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes,
                                oversample=oversample)
 
         PattF.adjust_mosaicity(mos_dom, mos_spread)
+        PattF.adjust_dispersion( disp_pct)
+        PattF.adjust_divergence( div_tup)
         for i_en in range(Nchan):
             PattF.primer(crystal=crystal,
                          energy=energies[i_en],
@@ -517,41 +529,72 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes,
             color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True)
             panel_imgs[i_en].append( color_img)
 
-    # arange into separate channels
     return panel_imgs
 
 
+def save_twocolor(simsAB, iset, fname, force=False):
+    """
+    save a 4-image dataset
+    First image is color channel A
+    Second is color channel B
+    3rd is the composited A+B color images
+    4th is (should be) the data to compare with
+
+    The raw data of iset should be 64 panels, and the sims should
+    be simulated onto the same geometry / detector
+    simsAB is generateed in sim_twocolor2 (panel_imgs) if two colors
+    are provided as its arguments./
+    :param simsAB:  output of sim_twocolor2 for two color channels
+        so its a dictionary with two keys, 0 and 1, each pointint
+        to a list of 64 panels of size 185 x 194
+    :param iset: an imageset containing raw data which is a
+        tuple of length 64 and each element is a
+        flex array when converted to numpy is a 185x194 array
+    :param fname: output fname
+    :param force: whether to force an override of fname
+    :return:
+    """
+    data_panels = np.array( map(lambda x: x.as_numpy_array(), iset.get_raw_data(0) ))
+    data = np.array( [ simsAB[0], simsAB[1],
+                      np.array(simsAB[0]) + np.array(simsAB[1]),
+                      data_panels])
+    if os.path.exists(fname) and not force:
+        print("%s exists!" % fname)
+        return
+
+    with h5py.File(fname,"w") as h5:
+        h5.create_dataset("sim64_d9114_images", data=data)
 
 
-def sim_channel(crystal, channel_en, Fcalc, detector=None,
-                panel_id=0, Gauss=False, oversample=2,
-                Ncells_abc=(5,5,5), mos_dom=20,
-                mos_spread=0.15, tot_flux=1e14):
-
-    Patts = PatternFactory(detector=detector,
-                           Ncells_abc=Ncells_abc,
-                           Gauss=Gauss,
-                           oversample=oversample,
-                           panel_id=panel_id)
-
-    en, fcalc = load_fcalc_file(fcalc_f)
-    flux = [fracA * tot_flux, fracB * tot_flux]
-    sim_patt = Patts.make_pattern2(crystal, flux, en, fcalc, mos_dom, mos_spread, False)
-    imgA, imgB = sim_patt
-
-    # OUTPUT DICTIONARY, many objects stored for bookkeeping purposes.
-    dump = {'imgA': imgA,
-            'imgB': imgB,
-            'sim_param': {'mos_dom': mos_dom,
-                          'mos_spread': mos_spread,
-                          'Gauss': Gauss,
-                          'Ncells_abc': Ncells_abc,
-                          'tot_flux': tot_flux,
-                          'fracA': fracA,
-                          'fracB': fracB,
-                          'fcalc_f': fcalc_f,
-                          'crystal': crystal
-                          }
-            }
-
-    return dump
+#def sim_channel(crystal, channel_en, Fcalc, detector=None,
+#                panel_id=0, Gauss=False, oversample=2,
+#                Ncells_abc=(5,5,5), mos_dom=20,
+#                mos_spread=0.15, tot_flux=1e14):
+#
+#    Patts = PatternFactory(detector=detector,
+#                           Ncells_abc=Ncells_abc,
+#                           Gauss=Gauss,
+#                           oversample=oversample,
+#                           panel_id=panel_id)
+#
+#    en, fcalc = load_fcalc_file(fcalc_f)
+#    flux = [fracA * tot_flux, fracB * tot_flux]
+#    sim_patt = Patts.make_pattern2(crystal, flux, en, fcalc, mos_dom, mos_spread, False)
+#    imgA, imgB = sim_patt
+#
+#    # OUTPUT DICTIONARY, many objects stored for bookkeeping purposes.
+#    dump = {'imgA': imgA,
+#            'imgB': imgB,
+#            'sim_param': {'mos_dom': mos_dom,
+#                          'mos_spread': mos_spread,
+#                          'Gauss': Gauss,
+#                          'Ncells_abc': Ncells_abc,
+#                          'tot_flux': tot_flux,
+#                          'fracA': fracA,
+#                          'fracB': fracB,
+#                          'fcalc_f': fcalc_f,
+#                          'crystal': crystal
+#                          }
+#            }
+#
+#    return dump

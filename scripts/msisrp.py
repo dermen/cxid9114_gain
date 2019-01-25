@@ -24,6 +24,8 @@ from dxtbx.datablock import DataBlockFactory
 from dials.array_family import flex
 from cxid9114.refine import jitter_refine
 from cxid9114.refine import metrics
+import scipy.ndimage
+from scipy.spatial import cKDTree
 
 spot_par = find_spots_phil_scope.fetch(source=parse("")).extract()
 spot_par_moder = deepcopy(spot_par)
@@ -160,6 +162,11 @@ for idx in hit_idx[:N]:
                          data_imgs = pan_imgs,
                          flux = FLUX,
                          ret_best=False,
+                         Ncells_abc=(10,10,10),
+                         oversample=2,
+                         Gauss=False,
+                         mos_dom=2,
+                         mos_spread=0.0,
                          scanX=np.arange(-.35, .35, .025),  # these seemed to be sufficient ranges
                          scanY=np.arange(-.35, .35, .025))
 
@@ -202,9 +209,33 @@ for idx in hit_idx[:N]:
         cryst_model = crystalAB
     # end of that HKL testing
 
+    # Optional secondary refinement.. Search a finer grid with smaller spots
+    # starting from already refined position
+    #jitt_out2 = jitter_refine.jitter_panels(panel_ids=pids,  # we only simulate the pids with strong spots
+    #                     crystal=cryst_model,
+    #                     refls=refls_strong,
+    #                     det=detector,
+    #                     beam=iset.get_beam(0),
+    #                     FF = FF,
+    #                     en = ENERGIES,
+    #                     data_imgs = pan_imgs,
+    #                     flux = FLUX,
+    #                     ret_best=False,
+    #                     Ncells_abc=(15,15,15),
+    #                     oversample=2,
+    #                     Gauss=False,
+    #                     mos_dom=2,
+    #                     mos_spread=0.0,
+    #                     scanX=np.arange(-.1, .1, .01),  # these seemed to be sufficient ranges
+    #                     scanY=np.arange(-.1, .1, .01))
 
-    # save the crystal models for later use
+
+    # save the crystal models and other data for later use and debugging
     utils.save_flex({"crystalAB": crystalAB,
+                     "res_opt": res_opt,
+                     "color_opt": color_opt,
+                     "resAB": resAB,
+                     "colorAB": colorAB,
                      "beamA": beamA,
                      "beamB": beamB,
                      "detector": iset.get_detector(0),
@@ -212,16 +243,88 @@ for idx in hit_idx[:N]:
                      "overlap": overlap,
                      "refls_strong": refls_strong },  "crystals%d.pkl" % idx)
 
-
     # now simulate the cryst_model
     # and we can use positions of the of the simulated pattern
     # to integrate the pixels on the camera
     # and set up the two color disentangler
     simsAB = sim_utils.sim_twocolors2(
-        optCrystal, iset.get_detector(0), iset.get_beam(0), [5000, None],
+        cryst_model, iset.get_detector(0), iset.get_beam(0), [5000, None],
         [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
-        [1e14, 1e14], Gauss=False, oversample=2,
-        Ncells_abc=(10,10,10), mos_dom=20, mos_spread=0.04)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
+        [1e14, 1e14], pids=[0], Gauss=False, oversample=4,
+        Ncells_abc=(20,20,20), mos_dom=20, mos_spread=0.0)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
+
+    # Now, few things to do here:
+    # The above simulation object has 128 images
+    # 1 image per each of 64 asics per each of 2 colors
+    # For each color, we will sum the single-color
+    # images in order to obtain a color-composited
+    # image akin to the measurement.
+    # This will guide where we should integrate the raw data
+
+    # In order to find the color-composited spot
+    # we will apply a median filter to smear any potentially
+    # partially overlapping spots merge into a
+    # single detectable region
+
+    # The profiles on the single-color images will also be integrated
+    # separately and used as parameters in the spot disentanglement
+    # algorithm
+
+    # We will run simple thresholding and connected region labeling
+    # in order to do spot finding on each of the images
+
+    # spot data on each colors simulated image
+    spot_dataA = spot_utils.get_spot_data_multipanel(
+        simsAB[0], detector=iset.get_detector(0),
+        beam=beamA, crystal=cryst_model, thresh=0,
+        filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
+
+    spot_dataB = spot_utils.get_spot_data_multipanel(
+        simsAB[1],detector=iset.get_detector(0),
+        beam=beamB , crystal=cryst_model, thresh=0,
+        filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
+
+    #HA, HiA = spot_utils.multipanel_refls_to_hkl(
+    #    refls_strong,
+    #    detector=iset.get_detector(0),
+    #    beam=beamA, crystal=cryst_model)
+    #HB, HiB = spot_utils.multipanel_refls_to_hkl(
+    #    refls_strong,
+    #    detector=iset.get_detector(0),
+    #    beam=beamB, crystal=cryst_model)
+
+    treeA = cKDTree(spot_dataA["Q"])
+    treeB = cKDTree(spot_dataB["Q"])
+
+    reflsQA = spot_utils.multipanel_refls_to_q(refls_strong, iset.get_detector(0), beamA)
+    reflsQB = spot_utils.multipanel_refls_to_q(refls_strong, iset.get_detector(0), beamB)
+
+    dists = []
+    dist_vecs = []
+    for i,c in enumerate(color_opt):
+        qA = reflsQA[i]
+        qB = reflsQB[i]
+        if c =="A":
+            dist, iA = treeA.query(qA)
+            dist_vec = treeA.data[iA] - qA
+        elif c == "B":
+            dist, iB = treeB.query(qB)
+            dist_vec = treeB.data[iB] - qB
+        else:
+            continue
+        dists.append( dist)
+        dist_vecs.append( dist_vec)
+
+
+
+
+
+
+
+    # spot data on composited color images
+    spot_data_compo = spot_utils.get_spot_data_multipanel(
+        np.array(simsAB[0]) + np.array(simsAB[1]), thresh=0,
+        filter=scipy.ndimage.filters.gaussian_filter, sigma=1)
 
     # finding moderately-strong spots
     #refls_mod = flex.reflection_table.from_observations(dblock, spot_par_moder)
