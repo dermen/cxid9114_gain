@@ -149,7 +149,7 @@ def indexing_residuals_twocolor(spotA, spotB, refls, detector):
             dv[i_ref] = (distA_vecs[i_ref])
         else:
             dv[i_ref] = ( distB_vecs[i_ref])
-    return closer_dist, dv
+    return closer_dist, dv, closer_vec
 
 #for f in fnames:
 #    data = utils.open_flex(f)

@@ -21,12 +21,26 @@ from libtbx.phil import parse
 from cxi_xdr_xes.two_color.two_color_indexer import indexer_two_color
 import dxtbx
 from dxtbx.datablock import DataBlockFactory
+from dxtbx.model.experiment_list import  ExperimentList, Experiment
 from dials.array_family import flex
 from cxid9114.refine import jitter_refine
 from cxid9114.refine import metrics
 import scipy.ndimage
-from scipy.spatial import cKDTree
+import os
 
+# -----------
+# Parameters
+# -----------
+mask_file = "../mask/dials_mask_64panels_2.pkl"  # mask file for spot detection
+img_f = "/Users/dermen/cxid9114/multi_run62_hits_wtime.h5"  # dxtbx format file
+out_dir = "results"  # where to dump results
+save_sim = 10  # how often to save an image file
+N = 3
+jitt_ref = False
+# -----------
+
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
 spot_par = find_spots_phil_scope.fetch(source=parse("")).extract()
 spot_par_moder = deepcopy(spot_par)
 
@@ -37,23 +51,22 @@ spot_par.spotfinder.threshold.dispersion.sigma_strong = 2.25
 spot_par.spotfinder.threshold.dispersion.sigma_background =6.
 spot_par.spotfinder.filter.min_spot_size = 2
 spot_par.spotfinder.force_2d = True
-spot_par.spotfinder.lookup.mask = "../mask/dials_mask_64panels_2.pkl"
+spot_par.spotfinder.lookup.mask = mask_file
 
-spot_par_moder.spotfinder.threshold.dispersion.global_threshold = 56.
-spot_par_moder.spotfinder.threshold.dispersion.gain = 28.
-spot_par_moder.spotfinder.threshold.dispersion.kernel_size = [1,1]
-spot_par_moder.spotfinder.threshold.dispersion.sigma_strong = 2.5
-spot_par_moder.spotfinder.threshold.dispersion.sigma_background = 2.5
-spot_par_moder.spotfinder.filter.min_spot_size = 1
-spot_par_moder.spotfinder.force_2d = True
-spot_par_moder.spotfinder.lookup.mask = "../mask/dials_mask_64panels_2.pkl"
-try_fft1d = False
-img_f = "/Users/dermen/cxid9114/multi_run62_hits_wtime.h5"
+#spot_par_moder.spotfinder.threshold.dispersion.global_threshold = 56.
+#spot_par_moder.spotfinder.threshold.dispersion.gain = 28.
+#spot_par_moder.spotfinder.threshold.dispersion.kernel_size = [1,1]
+#spot_par_moder.spotfinder.threshold.dispersion.sigma_strong = 2.5
+#spot_par_moder.spotfinder.threshold.dispersion.sigma_background = 2.5
+#spot_par_moder.spotfinder.filter.min_spot_size = 1
+#spot_par_moder.spotfinder.force_2d = True
+#spot_par_moder.spotfinder.lookup.mask = mask_file
+#try_fft1d = False
+
 loader = dxtbx.load(img_f)
-detector = loader.get_detector(0)
 
-info_f = utils.open_flex("../index/run62_idx_processed.pkl")
-hit_idx = info_f.keys()
+#info_f = utils.open_flex("../index/run62_idx_processed.pkl")
+#hit_idx = info_f.keys()
 
 ENERGIES = [parameters.ENERGY_LOW, parameters.ENERGY_HIGH]  # colors of the beams
 FF = [5000, None]  # Setting structure factors takes long time in nanoBragg, so
@@ -69,11 +82,10 @@ FLUX = [1e14, 1e14]  # fluxes of the beams
 #                                     dmin=1.5, ano_flag=True)
 # FF = [Fcalcs, None]
 
-N = 20  # process 20
-for idx in hit_idx[:N]:
+for idx in range(N):
 
     iset = loader.get_imageset( img_f)[ idx:idx+1]
-
+    detector = iset.get_detector(0)
     dblock = DataBlockFactory.from_imageset(iset)[0]
     refls_strong = flex.reflection_table.from_observations(dblock, spot_par)
 
@@ -152,35 +164,39 @@ for idx in hit_idx[:N]:
     # helper wrapper for U-matrix grid search based refinement
     # `scanZ = ...` can also be passed as an argument, to jitter rotation
     # about the Z (beam) axis
-    jitt_out = jitter_refine.jitter_panels(panel_ids=pids,  # we only simulate the pids with strong spots
-                         crystal=crystalAB,
-                         refls=refls_strong,
-                         det=detector,
-                         beam=iset.get_beam(0),
-                         FF = FF,
-                         en = ENERGIES,
-                         data_imgs = pan_imgs,
-                         flux = FLUX,
-                         ret_best=False,
-                         Ncells_abc=(10,10,10),
-                         oversample=2,
-                         Gauss=False,
-                         mos_dom=2,
-                         mos_spread=0.0,
-                         scanX=np.arange(-.35, .35, .025),  # these seemed to be sufficient ranges
-                         scanY=np.arange(-.35, .35, .025))
+    if not jitt_ref:
+        cryst_model = crystalAB
+    else:
+        jitt_out = jitter_refine.jitter_panels(panel_ids=pids,  # we only simulate the pids with strong spots
+                             crystal=crystalAB,
+                             refls=refls_strong,
+                             det=detector,
+                             beam=iset.get_beam(0),
+                             FF = FF,
+                             en = ENERGIES,
+                             data_imgs = pan_imgs,
+                             flux = FLUX,
+                             ret_best=False,
+                             Ncells_abc=(10,10,10),
+                             oversample=2,
+                             Gauss=False,
+                             mos_dom=2,
+                             mos_spread=0.0,
+                             scanX=np.arange(-.35, .35, .025),  # these seemed to be sufficient ranges
+                             scanY=np.arange(-.35, .35, .025))
 
     # select the refined matrix based on overlap superposition
     # overlap is a metric used in the JitterFactory (wrapped into jitter_panels)
     # which checks agreement between data panels and simulated panels
-    overlap = np.sum([jitt_out[pid]['overlaps'] for pid in jitt_out], axis=0)
-    max_pos = np.argmax(overlap)
-    optA = jitt_out[jitt_out.keys()[0]]["A_seq"][max_pos]  # just grab the first A_seq cause same sequence is tested on all panels
+
+        overlap = np.sum([jitt_out[pid]['overlaps'] for pid in jitt_out], axis=0)
+        max_pos = np.argmax(overlap)
+        optA = jitt_out[jitt_out.keys()[0]]["A_seq"][max_pos]  # just grab the first A_seq cause same sequence is tested on all panels
 
     # Now we have an indexing solution that is somewhat refined
     # make a new refined crystal
-    optCrystal = deepcopy(crystalAB)
-    optCrystal.set_A(optA)
+        optCrystal = deepcopy(crystalAB)
+        optCrystal.set_A(optA)
 
     # TODO: include a metric to verify that optCrystal
     # is indeed optimized. I guess this is already done via the refinement overlap
@@ -189,25 +205,25 @@ for idx in hit_idx[:N]:
     # Simplest metrix is maybe the overal
     # residual HKL given either crystalAB or optCrystal
 
-    resAB,colorAB = metrics.likeliest_color_and_res(
-        refls_strong, crystalAB,
-        iset.get_detector(0),beamA, beamB)
+    #resAB,colorAB = metrics.likeliest_color_and_res(
+    #    refls_strong, crystalAB,
+    #    iset.get_detector(0),beamA, beamB)
 
-    sum_res_AB = np.mean([r for r in resAB if r is not None])
-    num_idx_AB = len([r for r in resAB if r is not None])
+    #sum_res_AB = np.mean([r for r in resAB if r is not None])
+    #num_idx_AB = len([r for r in resAB if r is not None])
 
-    res_opt,color_opt = metrics.likeliest_color_and_res(
-        refls_strong, optCrystal,
-        iset.get_detector(0),beamA, beamB)
-    sum_res_opt = np.mean([r for r in res_opt if r is not None])
-    num_idx_opt = len([r for r in res_opt if r is not None])
+    #res_opt,color_opt = metrics.likeliest_color_and_res(
+    #    refls_strong, optCrystal,
+    #    iset.get_detector(0),beamA, beamB)
+    #sum_res_opt = np.mean([r for r in res_opt if r is not None])
+    #num_idx_opt = len([r for r in res_opt if r is not None])
 
     #if sum_res_opt < sum_res_AB:
     #    #  refinement worked as expected
     #    cryst_model = optCrystal
     #else:
     #    cryst_model = crystalAB
-    cryst_model = optCrystal
+        cryst_model = optCrystal
     # end of that HKL testing
 
     # Optional secondary refinement.. Search a finer grid with smaller spots
@@ -236,12 +252,22 @@ for idx in hit_idx[:N]:
     # to integrate the pixels on the camera
     # and set up the two color disentangler
     simsAB = sim_utils.sim_twocolors2(
-        cryst_model, iset.get_detector(0), iset.get_beam(0), [5000, None],
+        cryst_model, detector, iset.get_beam(0), [5000, None],
         [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
         [1e14, 1e14], pids=None, Gauss=False, oversample=4,
         Ncells_abc=(20,20,20), mos_dom=20, mos_spread=0.0)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
 
-    sim_utils.save_twocolor(simsAB, iset, "sim64_%d.h5" % idx, force=0)
+    if idx % save_sim ==0:
+        sim_fname = os.path.join( out_dir, "sim64_%d.h5" % idx)
+        sim_utils.save_twocolor(simsAB, iset, sim_fname, force=0)
+
+    simsAB_2 = sim_utils.sim_twocolors2(
+        crystalAB, detector, iset.get_beam(0), [5000, None],
+        [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
+        [1e14, 1e14], pids=None, Gauss=False, oversample=4,
+        Ncells_abc=(20,20,20), mos_dom=20, mos_spread=0.0)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
+
+
 
     # Now, few things to do here:
     # The above simulation object has 128 images
@@ -265,14 +291,30 @@ for idx in hit_idx[:N]:
 
     # spot data on each colors simulated image
     spot_dataA = spot_utils.get_spot_data_multipanel(
-        simsAB[0], detector=iset.get_detector(0),
+        simsAB[0], detector=detector,
         beam=beamA, crystal=cryst_model, thresh=0,
         filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
 
     spot_dataB = spot_utils.get_spot_data_multipanel(
-        simsAB[1],detector=iset.get_detector(0),
+        simsAB[1],detector=detector,
         beam=beamB , crystal=cryst_model, thresh=0,
         filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
+
+    d, dvecs, best = metrics.indexing_residuals_twocolor(spot_dataA, spot_dataB, refls_strong, detector)
+
+    if jitt_ref:
+        spot_dataA_2 = spot_utils.get_spot_data_multipanel(
+            simsAB[0], detector=detector,
+            beam=beamA, crystal=crystalAB, thresh=0,
+            filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
+
+        spot_dataB_2 = spot_utils.get_spot_data_multipanel(
+            simsAB[1],detector=detector,
+            beam=beamB , crystal=crystalAB, thresh=0,
+            filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
+        d2, dvecs2, best2 = metrics.indexing_residuals_twocolor(spot_dataA_2, spot_dataB_2, refls_strong, detector)
+
+
 
     #HA, HiA = spot_utils.multipanel_refls_to_hkl(
     #    refls_strong,
@@ -283,54 +325,96 @@ for idx in hit_idx[:N]:
     #    detector=iset.get_detector(0),
     #    beam=beamB, crystal=cryst_model)
 
-    treeA = cKDTree(spot_dataA["Q"])
-    treeB = cKDTree(spot_dataB["Q"])
+    #treeA = cKDTree(spot_dataA["Q"])
+    #treeB = cKDTree(spot_dataB["Q"])
 
-    reflsQA = spot_utils.multipanel_refls_to_q(refls_strong, iset.get_detector(0), beamA)
-    reflsQB = spot_utils.multipanel_refls_to_q(refls_strong, iset.get_detector(0), beamB)
+    #reflsQA = spot_utils.multipanel_refls_to_q(refls_strong, iset.get_detector(0), beamA)
+    #reflsQB = spot_utils.multipanel_refls_to_q(refls_strong, iset.get_detector(0), beamB)
 
-    dists = []
-    dist_vecs = []
-    for i,c in enumerate(color_opt):
-        qA = reflsQA[i]
-        qB = reflsQB[i]
-        if c =="A":
-            dist, iA = treeA.query(qA)
-            dist_vec = qA - treeA.data[iA]
-        elif c == "B":
-            dist, iB = treeB.query(qB)
-            dist_vec = qB - treeB.data[iB]
-        else:
-            continue
-        dists.append( dist)
-        dist_vecs.append( dist_vec)
+    #dists = []
+    #dist_vecs = []
+    #for i,c in enumerate(color_opt):
+    #    qA = reflsQA[i]
+    #    qB = reflsQB[i]
+    #    if c =="A":
+    #        dist, iA = treeA.query(qA)
+    #        dist_vec = qA - treeA.data[iA]
+    #    elif c == "B":
+    #        dist, iB = treeB.query(qB)
+    #        dist_vec = qB - treeB.data[iB]
+    #    else:
+    #        continue
+    #    dists.append( dist)
+    #    dist_vecs.append( dist_vec)
 
     # spot data on composited color images
-    spot_data_combo = spot_utils.get_spot_data_multipanel(
-        np.array(simsAB[0]) + np.array(simsAB[1]),
-        detector=iset.get_detector(0),
-        beam=iset.get_beam(0),
-        crystal=cryst_model,
-        thresh=0,
-        filter=scipy.ndimage.filters.gaussian_filter, sigma=1)
+
+    #spot_data_combo = spot_utils.get_spot_data_multipanel(
+    #    np.array(simsAB[0]) + np.array(simsAB[1]),
+    #    detector=iset.get_detector(0),
+    #    beam=iset.get_beam(0),
+    #    crystal=cryst_model,
+    #    thresh=0,
+    #    filter=scipy.ndimage.filters.gaussian_filter, sigma=1)
 
     # save the crystal models and other data for later use and debugging
-    utils.save_flex({"crystalAB": crystalAB,
-                     "res_opt": res_opt,
-                     "color_opt": color_opt,
-                     "resAB": resAB,
-                     "colorAB": colorAB,
-                     "beamA": beamA,
-                     "beamB": beamB,
-                     "detector": iset.get_detector(0),
-                     "crystalOpt": optCrystal,
-                     "overlap": overlap,
-                     "spot_dataA": spot_dataA,
-                     "spot_dataB": spot_dataB,
-                     "dist_vecs": dist_vecs,
-                     "dists": dists,
-                     "spot_data_combo": spot_data_combo,
-                     "refls_strong": refls_strong },  "crystals%d.pkl" % idx)
+
+    reflsA = refls_strong.select(flex.bool(
+        np.logical_and(best == 0, d/.10992 < 5)))
+
+    reflsB = refls_strong.select(flex.bool(
+        np.logical_and(best == 1, d/.10992 < 5)))
+
+    eA = Experiment()
+    eA.beam = beamA
+    eA.detector = detector
+    eA.imageset = iset
+    eA.crystal = cryst_model
+
+    eB = Experiment()
+    eB.beam = beamB
+    eB.detector = detector
+    eB.imageset = iset
+    eB.crystal = cryst_model
+
+    EL = ExperimentList()
+    EL.append(eA)
+    EL.append(eB)
+
+    exp_json = os.path.join(out_dir, "expAB_%d.json" % idx )
+    reflA_pkl = os.path.join(out_dir, "reflA_%d.pkl" % idx)
+    reflB_pkl = os.path.join(out_dir, "reflB_%d.pkl" % idx)
+    orientAB.export_as_json( EL, exp_json)
+    utils.save_flex(reflsA, reflA_pkl)
+    utils.save_flex(reflsB, reflB_pkl)
+    dump_pkl = os.path.join(out_dir, "dump_%d.pkl" % idx)
+
+    dump = {"crystalAB": crystalAB,
+             #"res_opt": res_opt,
+             #"color_opt": color_opt,
+             #"resAB": resAB,
+             #"colorAB": colorAB,
+             "beamA": beamA,
+             "beamB": beamB,
+             "detector": detector,
+             "spot_dataA": spot_dataA,
+             "spot_dataB": spot_dataB,
+             "d": d,
+             "dvecs": dvecs,
+             "best": best,
+             "rmsd": orientAB.best_rmsd,
+             #"dist_vecs": dist_vecs,
+             #"dists": dists,
+             #"spot_data_combo": spot_data_combo,
+             "refls_strong": refls_strong}
+
+    if jitt_ref:
+        dump["crystalOpt"]= optCrystal
+        dump["d2"] =  d2
+        dump["overlap"] =  overlap
+        dump["dvecs2"] =  dvecs2
+        dump["best2"]= best2
+    utils.save_flex(dump,  dump_pkl)
 
 
     # finding moderately-strong spots

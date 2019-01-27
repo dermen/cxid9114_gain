@@ -17,8 +17,6 @@ from dxtbx.model.experiment_list import Experiment, ExperimentList
 from dials.algorithms.shoebox import MaskCode
 from dials.algorithms.indexing.stills_indexer import stills_indexer
 
-from memory_profiler import profile
-
 help_message = '''
 This program indexes images with diffraction spots at two distinct wavelengths.
 The indexing algorithm derives from real space grid search. The 2-D grid search
@@ -59,7 +57,6 @@ def index_reflections_detail(debug, experiments,
   ''' overwrites base class index_reflections function and assigns spots to
      their corresponding experiment (wavelength)'''
 
-  print("\n\n special indexing \n\n")
   # initialize each reflections miller index to 0,0,0
   reflections['miller_index'] = flex.miller_index(len(reflections), (0,0,0))
 
@@ -313,7 +310,6 @@ class indexer_two_color(stills_indexer):
                              verbosity=verbosity)
 
     for i in range(len(reflections)):
-      print("BLILILILIT")
       if reflections['id'][i] == -1:
         reflections['id'][i] = 0
 
@@ -392,13 +388,13 @@ class indexer_two_color(stills_indexer):
     cell_dimensions = self.target_symmetry_primitive.unit_cell().parameters()[:3]
     unique_cell_dimensions = set(cell_dimensions)
 
-    print("Makring search vecs")
+    print("Making search vecs")
     spiral_method = True
     if spiral_method:
-        basis_vec_noise =True
-        noise_scale = 2.
-        #_N = 200000   # massively oversample the hemisphere so we can apply noise to our search
-        _N = 100000
+        basis_vec_noise = True
+        noise_scale = 1.5
+        _N = 800000   # massively oversample the hemisphere so we can apply noise to our search
+        #_N = 100000
         print "Number of search vectors: %i" %( _N * len(unique_cell_dimensions))
         J = _N*2
         _thetas = [np.arccos( (2.*j - 1. - J)/J)
@@ -414,9 +410,10 @@ class indexer_two_color(stills_indexer):
         rec_pts = np.array([self.reciprocal_lattice_points[i] for i in range(len(self.reciprocal_lattice_points))])
         N_unique = len(unique_cell_dimensions)
 
+        del _x, _y, _z, _phis, _thetas
         # much faster to use numpy for massively over-sampled hemisphere..
-        func_vals = np.zeros( nn*N_unique)
-        vecs = np.zeros( (nn*N_unique, 3) )
+        function_values = np.zeros( nn*N_unique)
+        vectors = np.zeros( (nn*N_unique, 3) )
         for i, l in enumerate(unique_cell_dimensions):
           # create noise model on top of lattice lengths...
           if basis_vec_noise:
@@ -427,13 +424,14 @@ class indexer_two_color(stills_indexer):
 
           ul = _u_vecs * vec_mag
           func_slc = slice( i*nn, (i+1)*nn)
-          vecs[func_slc] = ul
-          func_vals[func_slc] = np.sum( np.cos( 2*np.pi*np.dot(rec_pts, ul.T) ),
+          vectors[func_slc] = ul
+          function_values[func_slc] = np.sum( np.cos( 2*np.pi*np.dot(rec_pts, ul.T) ),
                                       axis=0)
 
-        order = np.argsort(func_vals)[::-1]  # sort function values, largest values first
-        function_values = func_vals[order]
-        vectors = vecs[order]
+        del _u_vecs, vec_mag
+        order = np.argsort(function_values)[::-1]  # sort function values, largest values first
+        function_values = function_values[order]
+        vectors = vectors[order]
 
     else:  # fall back on original flex method
         vectors = flex.vec3_double()
@@ -468,7 +466,6 @@ class indexer_two_color(stills_indexer):
       if is_unique:
         unique_vectors.append(v)
       i += 1
-
     print ("chose unique basis vecs")
     if self.params.debug:
       for i in range(N_UNIQUE_V):
@@ -507,6 +504,8 @@ class indexer_two_color(stills_indexer):
     if self.params.debug_plots:
       self.debug_plot_candidate_basis_vectors()
 
+
+    del vectors, function_values
 
     candidate_orientation_matrices \
       = self.find_candidate_orientation_matrices(
@@ -559,6 +558,4 @@ class indexer_two_color(stills_indexer):
         #candidate_orientation_matrices[i] = symmetrized_model
     self.candidate_crystal_models = candidate_orientation_matrices
 
-    # memory leak somewhere... probably not here.. but just in case...
-    del _x, _y, _z, _u_vecs, order, rec_pts, vecs, func_vals, vectors, function_values
 
