@@ -65,6 +65,26 @@ def multipanel_refls_to_q(refls, detector, beam):
     return np.vstack( all_q)
 
 
+def refls_to_q(refls, detector, beam, oldmethod=False):
+    reflsPP = refls_by_panelname(refls)
+    q_vecs = []
+    for pid in reflsPP:
+        if not isinstance( pid, int):
+            print("%d panel name is not an integer and cant be used to index detector" % pid)
+            continue
+        if pid >= len(detector):
+            print("panel %d is not in the detector list" % pid)
+            continue
+        x,y,_ = xyz_from_refl(reflsPP[pid])
+        q = xy_to_q(x,y,
+                    panel=detector[pid],
+                    beam=beam,
+                    oldmethod=oldmethod)
+
+        q_vecs.append(q)
+    return np.vstack( q_vecs)
+
+
 def xy_to_q(x,y, panel, beam, oldmethod=False):
     """
     convert pixel coords to q-vectors
@@ -77,7 +97,7 @@ def xy_to_q(x,y, panel, beam, oldmethod=False):
     :return: the Q-vectors corresponding to the spots
     """
     if oldmethod:
-        pixsizeFS, pixsizeSS = panel.get_pixel_size()[0]
+        pixsizeFS, pixsizeSS = panel.get_pixel_size()
         orig = np.array(panel.get_origin())
         ss = np.array(panel.get_slow_axis())
         fs = np.array(panel.get_fast_axis())
@@ -87,15 +107,39 @@ def xy_to_q(x,y, panel, beam, oldmethod=False):
         s1 = pix_mm / np.linalg.norm( pix_mm,axis=1)[:,None] / beam.get_wavelength()
         q_vecs = (s1 - s0)
     else:
-        pix_mm = panel.pixel_to_millimeter( flex.vec2_double( zip(x,y)))
-        coords = panel.get_lab_coord( pix_mm)
+        #pix_mm = panel.pixel_to_millimeter( flex.vec2_double( zip(x,y)))
+        #coords = panel.get_lab_coord( pix_mm)
+        coords = flex.vec3_double(tuple(
+            panel.get_pixel_lab_coord((i,j)) for i,j in zip(x,y) ))
         coords = coords / coords.norms()
         q_vecs = coords *(1./beam.get_wavelength()) - beam.get_s0()
 
-        # I like to return as numpy array...
         q_vecs = q_vecs.as_double().as_numpy_array().reshape((len(q_vecs), 3))
 
     return q_vecs
+
+
+def spotdat_xyz_in_lab(spot_data, detector, xy_key="comIpos"):
+    all_spot_lab = []
+    pids = [i for i in range(64) if i in spot_data]
+    for pid in pids:
+        if spot_data[pid] is None:
+            continue
+        spotpix = spot_data[pid][xy_key]
+        panel = detector[pid]
+        all_spot_lab += [panel.get_pixel_lab_coord((xpix,ypix)) for ypix, xpix in spotpix]
+    return np.array(all_spot_lab)
+
+
+def refls_xyz_in_lab(refls, detector, xy_key="xyzobs.px.value"):
+    all_refls_lab = []
+    for i,r in enumerate(refls):
+        panel_name = r['panel']
+        panel = detector[panel_name]
+        x,y,_ = r[xy_key]
+        lab_xyz = panel.get_pixel_lab_coord((x,y))
+        all_refls_lab.append( lab_xyz)
+    return np.array(all_refls_lab)
 
 
 def spots_from_sim(img, thresh=0, as_tuple=False):
@@ -546,6 +590,39 @@ def get_spot_data_multipanel(data, detector, beam, crystal,
 
     return spot_data
 
+
+def msisrp_overlap(spot_data, refls, detector, xy_only=False):
+    """
+    Given a spot_data object and a reflection table
+    Find the proximity of each reflection to each spo
+
+    Spot_data is basically a reflection table
+    made from the simulated data, using scipy.ndimage
+
+    :param spot_data: spot data object
+    :param refls: reflection tabel
+    :param detector: dxtbx detector model
+    :param xy_only: whether to return distances in the plane
+        perpendicular to the z coordinate, or full 3D
+    :return: the dists and the residual vectors pointing from the
+        prediction to the strong spot
+    """
+
+    if xy_only:
+        end=2
+    else:
+        end=3
+
+    xyz_spot = spotdat_xyz_in_lab(spot_data, detector)
+    tree = cKDTree(xyz_spot[:,:end])
+
+    xyz_refls = refls_xyz_in_lab( refls, detector)
+
+    dists, nn = tree.query(xyz_refls[:,:end])
+
+    dist_vecs = xyz_refls[:,:end] - tree.data[nn]
+
+    return dists, dist_vecs
 
 
 if __name__=="__main__":

@@ -4,6 +4,7 @@ from scitbx.matrix import sqr, col
 from cxid9114.spots import spot_utils
 from cxid9114.sim import sim_utils
 
+
 class JitterFactory:
     def __init__(self, crystal, Patt, refls, data_image, szx=30, szy=30):
         """

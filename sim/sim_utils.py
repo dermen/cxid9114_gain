@@ -284,7 +284,7 @@ class PatternFactory:
 
     def __init__(self, crystal=None, detector=None, beam=None,
                  Ncells_abc=(10,10,10), Gauss=False, oversample=2, panel_id=0,
-                 recenter=True):
+                 recenter=True, verbose=10):
         """
         :param crystal:  dials crystal model
         :param detector:  dials detector model
@@ -300,7 +300,7 @@ class PatternFactory:
         if self.beam is None:
             self.beam = utils.open_flex(beam_f)
 
-        self.SIM2 = nanoBragg(self.detector, self.beam, verbose=10, panel_id=panel_id)
+        self.SIM2 = nanoBragg(self.detector, self.beam, verbose=verbose, panel_id=panel_id)
         #self.SIM2.beamcenter_convention = convention.DIALS
         self.SIM2.oversample = oversample  # oversamples the pixel ?
         self.SIM2.polarization = 1  # polarization fraction ?

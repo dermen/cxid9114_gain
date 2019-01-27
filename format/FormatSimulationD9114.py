@@ -23,8 +23,7 @@ IMG_SIZE = (1800, 1800)
 
 class FormatSimulationD9114(FormatHDF5, FormatStill):
     """
-    Class for reading D9114 HDF5 hit files
-    script (this script lives on the SACLA hpc).
+    Class for reading D9114 simulated monolithic cspad data
     """
     @staticmethod
     def understand(image_file):

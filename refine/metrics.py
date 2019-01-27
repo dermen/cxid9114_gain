@@ -5,6 +5,7 @@ two color data
 """
 
 from cxid9114.spots import spot_utils
+from cxid9114 import utils
 import numpy as np
 from scipy.spatial import cKDTree
 
@@ -91,7 +92,6 @@ def q_vecs_from_spotData(spotData):
 
 def sim_to_data_Qdeviation(spotDataA, spotDataB, refls, detector, beam):
     """
-
     :param spotDataA:
     :param spotDataB:
     :param refls:
@@ -105,7 +105,7 @@ def sim_to_data_Qdeviation(spotDataA, spotDataB, refls, detector, beam):
         R = reflsPP[pid]
         x,y,z = spot_utils.xyz_from_refl(R)
         qvecs = spot_utils.xy_to_q(x, y, detector[pid], beam)
-        data_qvecs.append( qvecs)
+        data_qvecs.append(qvecs)
     data_qvecs = np.vstack(data_qvecs)
 
     simA_qvecs = q_vecs_from_spotData(spotDataA)
@@ -121,3 +121,51 @@ def sim_to_data_Qdeviation(spotDataA, spotDataB, refls, detector, beam):
     nnB = treeB.data[idxB]
 
     return distA, nnA, distB, nnB
+
+
+
+def indexing_residuals_twocolor(spotA, spotB, refls, detector):
+    """
+
+    :param spotA:
+    :param spotB:
+    :param refls:
+    :param beamA:
+    :param beamB:
+    :param detector:
+    :return:
+    """
+    distA, distA_vecs = spot_utils.msisrp_overlap(spotA, refls, detector)
+    distB, distB_vecs = spot_utils.msisrp_overlap(spotB, refls, detector)
+
+    distsAB = zip(distA, distB)
+    closer_vec = np.argmin(distsAB, axis=1)
+    closer_dist = np.min(distsAB, axis=1)
+
+    Nref = len(refls)
+    dv = np.zeros( (Nref, 3))
+    for i_ref in range(Nref):
+        if closer_vec[i_ref] == 0:
+            dv[i_ref] = (distA_vecs[i_ref])
+        else:
+            dv[i_ref] = ( distB_vecs[i_ref])
+    return closer_dist, dv
+
+#for f in fnames:
+#    data = utils.open_flex(f)
+#    spotA= data["spot_dataA"]
+#    spotB = data["spot_dataB"]
+#    refls = data["refls_strong"]
+#    beamA = data["beamA"]
+#    beamB = data["beamB"]
+#    detector = data["detector"]
+#    distA, distA_vecs = metrics.msisrp_overlap(spotA, refls, detector)
+#    distB, distB_vecs = metrics.msisrp_overlap(spotB, refls, detector)
+#    all_distA.append(distA)
+#    all_distB.append(distB)
+#    all_distA_vecs.append(distA_vecs)
+#    all_distB_vecs.append( distB_vecs)
+#all_distA = np.hstack(all_distA)
+#all_distB = np.hstack(all_distB)
+#all_distA_vecs = np.vstack( all_distA_vecs)
+#all_distB_vecs = np.vstack( all_distB_vecs)
