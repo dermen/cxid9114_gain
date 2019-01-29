@@ -14,24 +14,25 @@ from scipy.spatial import cKDTree
 from dials.array_family import flex
 
 
-def multipanel_refls_to_hkl(refls, detector, beam, crystal):
-    panel_refls = refls_by_panelname(refls)
-    all_h = []
-    all_hi  = []
-    for pid in panel_refls:
-        prefls = panel_refls[pid]
-        h,hi = refls_to_hkl(prefls, detector[pid], beam, crystal)
-        all_h.append(h)
-        all_hi.append(hi)
-    return np.vstack(all_h), np.vstack(all_hi)
+#def multipanel_refls_to_hkl(refls, detector, beam, crystal):
+#    panel_refls = refls_by_panelname(refls)
+#    all_h = []
+#    all_hi  = []
+#    for pid in panel_refls:
+#        prefls = panel_refls[pid]
+#        h,hi = refls_to_hkl(prefls, detector[pid], beam, crystal)
+#        all_h.append(h)
+#        all_hi.append(hi)
+#    return np.vstack(all_h), np.vstack(all_hi)
 
 
-def refls_to_hkl(refls, detector_node, beam, crystal, as_numpy_arrays=True):
+def refls_to_hkl(refls, detector, beam, crystal,
+                 update_table=False):
     """
-    convert pixel xy to miller index data
+    convert pixel panel reflections to miller index data
 
     :param refls:  reflecton table for a panel or a tuple of (x,y)
-    :param detector_node:  dxtbx detector Panel (detector Node)
+    :param detector:  dxtbx detector model
     :param beam:  dxtbx beam model
     :param crystal: dxtbx crystal model
     :param as_numpy_arrays: return data as numpy arrays
@@ -39,50 +40,61 @@ def refls_to_hkl(refls, detector_node, beam, crystal, as_numpy_arrays=True):
         (one for fractional and one for whole HKL)
         else dictionary of hkl_i (nearest) and hkl (fractional)
     """
+    if 'rlp' not in list(refls.keys()):
+        q_vecs = refls_to_q(refls, detector, beam, update_table=update_table)
+    else:
+        q_vecs = np.vstack([r['rlp'] for r in refls])
     Ai = sqr(crystal.get_A()).inverse()
     Ai = Ai.as_numpy_array()
-    if isinstance(refls, flex.reflection_table):
-        x,y,_ = xyz_from_refl(refls, key='xyzobs.px.value')
-    else:
-        x,y = refls
-    q_vecs = xy_to_q( x,y, detector_node, beam)
-
     HKL = np.dot( Ai, q_vecs.T)
-    HKLi = map( lambda h: np.ceil(h-0.5), HKL)
-    if as_numpy_arrays:
-        return np.vstack(HKL).T, np.vstack(HKLi).T
-    else:
-        return {'hkl':HKL, 'hkl_i': HKLi}
+    HKLi = map( lambda h: np.ceil(h-0.5).astype(int), HKL)
+    if update_table:
+        refls['miller_index'] = flex.vec3_int(tuple(map(tuple, HKLi)))
+    return np.vstack(HKL).T, np.vstack(HKLi).T
 
 
-def multipanel_refls_to_q(refls, detector, beam):
-    R = refls_by_panelname(refls)
-    all_q = []
-    for pid in R:
-        x,y,z = xyz_from_refl(R[pid])
-        q_vecs = xy_to_q(x,y,detector[pid], beam)
-        all_q.append( q_vecs)
-    return np.vstack( all_q)
+#def multipanel_refls_to_q(refls, detector, beam):
+#    R = refls_by_panelname(refls)
+#    all_q = []
+#    for pid in R:
+#        x,y,z = xyz_from_refl(R[pid])
+#        q_vecs = xy_to_q(x,y,detector[pid], beam)
+#        all_q.append( q_vecs)
+#    return np.vstack( all_q)
 
 
-def refls_to_q(refls, detector, beam, oldmethod=False):
-    reflsPP = refls_by_panelname(refls)
+def refls_to_q(refls, detector, beam, update_table=False,oldmethod=False):
+
+    orig_vecs = {}
+    fs_vecs = {}
+    ss_vecs = {}
+    u_pids = set([r['panel'] for r in refls])
+    for pid in u_pids:
+        orig_vecs[pid] = np.array(detector[pid].get_origin())
+        fs_vecs[pid] = np.array(detector[pid].get_fast_axis())
+        ss_vecs[pid] = np.array(detector[pid].get_slow_axis())
+
+    s1_vecs = []
     q_vecs = []
-    for pid in reflsPP:
-        if not isinstance( pid, int):
-            print("%d panel name is not an integer and cant be used to index detector" % pid)
-            continue
-        if pid >= len(detector):
-            print("panel %d is not in the detector list" % pid)
-            continue
-        x,y,_ = xyz_from_refl(reflsPP[pid])
-        q = xy_to_q(x,y,
-                    panel=detector[pid],
-                    beam=beam,
-                    oldmethod=oldmethod)
+    for r in refls:
+        pid = r['panel']
+        i_fs, i_ss,_ = r['xyzobs.px.value']
+        panel = detector[pid]
+        orig = orig_vecs[pid] #panel.get_origin()
+        fs = fs_vecs[pid] #panel.get_fast_axis()
+        ss = ss_vecs[pid] #panel.get_slow_axis()
 
-        q_vecs.append(q)
-    return np.vstack( q_vecs)
+        fs_pixsize, ss_pixsize = panel.get_pixel_size()
+        s1 = orig + i_fs*fs*fs_pixsize + i_ss*ss*ss_pixsize  # scattering vector
+        s1 = s1 / np.linalg.norm(s1) / beam.get_wavelength()
+        s1_vecs.append( s1)
+        q_vecs.append( s1-beam.get_s0())
+
+    if update_table:
+        refls['s1'] = flex.vec3_double(tuple(map(tuple,s1_vecs)))
+        refls['rlp'] = flex.vec3_double(tuple(map(tuple,q_vecs)))
+
+    return np.vstack(q_vecs)
 
 
 def xy_to_q(x,y, panel, beam, oldmethod=False):
@@ -340,7 +352,7 @@ def get_spot_data(img, thresh=0, filter=None, **kwargs):
 
 
 
-def plot_overlap(spotdataA, spotdataB, refls):
+def plot_overlap(spotdataA, spotdataB, refls, is_multi=True, detector=None):
     """
 
     :param spotdataA: return value of get_spot_data method
@@ -351,17 +363,50 @@ def plot_overlap(spotdataA, spotdataB, refls):
     import pylab as plt
 
     # compute a simple overlap to within 4 pixels, not very important, just quick debugging
-    yA, xA = map(np.array, zip(*spotdataA["comIpos"]))
-    yB, xB = map(np.array, zip(*spotdataB["comIpos"]))
+    if is_multi:
+        xA,yA,zA = map( np.array, zip(*spotdat_xyz_in_lab(spotdataA, detector )))
+        xB,yB,zB = map( np.array, zip(*spotdat_xyz_in_lab(spotdataB, detector )))
+        allIA, allIB =[],[]
+        #all_yA, all_xA ,all_yB, all_xB, allIA, allIB = [],[],[],[],[],[]
+        for i in range(64):
+            if i in spotdataA:
+                if spotdataA[i] is not None:
+                    #yA,xA = zip(*spotdataA[i]["comIpos"])
+                    #all_yA.append(yA)
+                    #all_xA.append(xA)
+                    allIA.append(spotdataA[i]['meanI'])
+            if i in spotdataB:
+                if spotdataB[i] is not None:
+                    #yB,xB = zip(*spotdataB[i]["comIpos"])
+                    #all_yB.append(yB)
+                    #all_xB.append(xB)
+                    allIB.append(spotdataB[i]['meanI'])
+        #xA = np.hstack(all_xA)
+        #xB = np.hstack(all_xB)
+        #yA = np.hstack(all_yA)
+        #yB = np.hstack(all_yB)
+        allIB = np.hstack( allIB)
+        allIA = np.hstack(allIA)
+    else:
+        yA, xA = map(np.array, zip(*spotdataA["comIpos"]))
+        yB, xB = map(np.array, zip(*spotdataB["comIpos"]))
+
+
     xAB = np.hstack((xA, xB))
     yAB = np.hstack((yA, yB))
     tree = cKDTree(zip(xAB, yAB))
-    xdata, ydata, _ = map(np.array, xyz_from_refl(refls))
+    if is_multi:
+        xdata,ydata,_ = map( np.array, zip(*refls_xyz_in_lab(refls, detector)))
+    else:
+        xdata, ydata, _ = map(np.array, xyz_from_refl(refls))
     dist, pos = tree.query(zip(xdata, ydata))
     missedx, missedy = xdata[dist >= 4], ydata[dist >= 4]
 
     n_idx = sum(dist < 4)
     n_refl = len(dist)
+
+    from IPython import embed
+    embed()
 
     s = 4
     r = 5
@@ -374,8 +419,12 @@ def plot_overlap(spotdataA, spotdataB, refls):
     Circle_styleB = {"ec": "C3", "fc": "C3", "lw": "1", "radius": r}
 
     # size the stots according to mean intensity
-    sizesA = np.log10(spotdataA["meanI"])
-    sizesB = np.log10(spotdataB["meanI"])
+    if is_multi:
+        sizesA = np.log10(allIA)
+        sizesB = np.log10(allIB)
+    else:
+        sizesA = np.log10(spotdataA["meanI"])
+        sizesB = np.log10(spotdataB["meanI"])
     sizesA -= sizesA.min()
     sizesB -= sizesB.min()
 
@@ -574,19 +623,19 @@ def get_spot_data_multipanel(data, detector, beam, crystal,
         q_vecs = xy_to_q(x,y,detnode, beam)
         spot_data[pid]["q_vecs"] = q_vecs
 
-        h, hi = refls_to_hkl((x,y), detnode, beam, crystal)
+        #h, hi = refls_to_hkl((x,y), detnode, beam, crystal)
 
-        spot_data[pid]['H'] = h
-        spot_data[pid]['Hi'] = hi
+        #spot_data[pid]['H'] = h
+        #spot_data[pid]['Hi'] = hi
 
-        all_h.append(h)
-        all_hi.append(hi)
+        #all_h.append(h)
+        #all_hi.append(hi)
         all_q.append(q_vecs)
     if all_q:
         spot_data["Q"] = np.vstack(all_q)
-    if all_h:
-        spot_data["H"] = np.vstack( all_h)
-        spot_data["Hi"] = np.vstack( all_hi)
+    #if all_h:
+        #spot_data["H"] = np.vstack( all_h)
+        #spot_data["Hi"] = np.vstack( all_hi)
 
     return spot_data
 

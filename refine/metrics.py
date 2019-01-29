@@ -169,3 +169,74 @@ def indexing_residuals_twocolor(spotA, spotB, refls, detector):
 #all_distB = np.hstack(all_distB)
 #all_distA_vecs = np.vstack( all_distA_vecs)
 #all_distB_vecs = np.vstack( all_distB_vecs)
+
+def plot_img(refls, spot_dataA, spot_dataB, detector, beamA,beamB, crystal, iset, name, bad=None):
+    from cxid9114  import utils
+    import numpy as np
+    import pylab as plt
+    d, dvecs, best = indexing_residuals_twocolor(spot_dataA, spot_dataB, refls, detector)
+    HA, HiA = spot_utils.refls_to_hkl(refls, detector, beamA, crystal)
+    HB, HiB = spot_utils.refls_to_hkl(refls, detector, beamB, crystal)
+
+    Q = spot_utils.refls_to_q(refls, detector, beamA)
+    Qmag = np.linalg.norm(Q, axis=1)
+    res = 1. / Qmag
+
+    HAres = np.round((HA - HiA),2)
+    HBres = np.round((HB-HiB),2)
+    plot_dvecs(d, dvecs, HAres, HBres)
+
+    if bad is None:
+        bad = np.where(utils.is_outlier(d, 4))[0]
+    for i_b,b in enumerate(bad):
+        r = refls[b]
+        reso = res[b]
+        panel = r['panel']
+        HAres = np.round((HA - HiA)[b], 2)
+        HBres = np.round((HB - HiB)[b], 2)
+        # continue
+        yA, xA = zip(*spot_dataA[panel]['comIpos'])
+        yB, xB = zip(*spot_dataB[panel]['comIpos'])
+        xp, yp, _ = r['xyzobs.px.value']
+        img = iset.get_raw_data(0)[panel].as_numpy_array()
+        plt.figure()
+        plt.imshow(img, vmax=150)
+        plt.plot(xA, yA, 'o', mfc='none', color='lightblue', ms=10, mew=2)
+        plt.plot(xB, yB, 's', mfc='none', color='C3', ms=10, mew=2)
+
+        plt.plot(xp, yp, 'o', color='C2', mfc='none', ms=10, mew=2)
+        HAres = np.sqrt(np.sum(HAres**2))
+        HBres = np.sqrt(np.sum(HBres**2))
+
+        title_s = "fhklA: %.2f,    fhklB: %.2f" % (HAres, HBres)
+        title_s += "\nresolution of spot: ~ %.2f Angstrom" % reso
+        plt.gca().set_title(title_s)
+        plt.draw()
+        plt.pause(5)
+        plt.savefig("%s_%d.png" % (name, i_b))
+        plt.close()
+
+
+def plot_dvecs(d, dvecs ,HA, HB):
+    import pylab as plt
+    import numpy as np
+    from cxid9114 import utils
+    bad = np.where(utils.is_outlier(d, 4))[0]
+    plt.figure()
+    plt.plot( dvecs[:,0]/.10992, dvecs[:,1]/.10992, 'o',color='C0', ms=3)
+    ax = plt.gca()
+    ax.add_patch(plt.Circle(xy=(0,0), radius=2, ec='C1', fc='none',ls='dashed'))
+    for b in bad:
+        hA = np.sqrt(np.sum(HA[b]**2))
+        hB = np.sqrt(np.sum(HB[b]**2))
+        h= min([hA,hB])
+        s = "frac_h: %.2f" % h
+        i,j,_ = dvecs[b]/.10992
+        t=ax.text(i,j+2, s=s)
+        t.set_bbox(dict(facecolor='w', alpha=0.3, edgecolor='w'))
+        plt.plot( i,j, 'D', mec='C2', mfc='none',mew=2, ms=10 )
+        #ax.add_patch(plt.Circle(xy=(i,j), radius=.5, ec='C2', fc='none',lw=2))
+
+    plt.xlabel("$\Delta_X$ (pixels)", fontsize=18)
+    plt.ylabel("$\Delta_Y$ (pixels)", fontsize=18)
+    ax.tick_params(labelsize=15)

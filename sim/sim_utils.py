@@ -1,5 +1,6 @@
 
 import os, sys
+import io
 import scipy.interpolate
 interp1d = scipy.interpolate.interp1d
 import numpy as np
@@ -284,7 +285,7 @@ class PatternFactory:
 
     def __init__(self, crystal=None, detector=None, beam=None,
                  Ncells_abc=(10,10,10), Gauss=False, oversample=2, panel_id=0,
-                 recenter=True, verbose=10):
+                 recenter=True, verbose=10 ):
         """
         :param crystal:  dials crystal model
         :param detector:  dials detector model
@@ -496,7 +497,7 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=2,
 
 
 def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
-                   Gauss=False, oversample=2, Ncells_abc=(5,5,5),
+                   Gauss=False, oversample=2, Ncells_abc=(5,5,5),verbose=0,
                    div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15):
     Npan = len(detector)
     Nchan = len( energies)
@@ -514,6 +515,7 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                                panel_id=i_pan,
                                recenter=True,
                                Gauss=Gauss,
+                               verbose=verbose,
                                Ncells_abc=Ncells_abc,
                                oversample=oversample)
 
