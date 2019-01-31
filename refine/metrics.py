@@ -240,3 +240,106 @@ def plot_dvecs(d, dvecs ,HA, HB):
     plt.xlabel("$\Delta_X$ (pixels)", fontsize=18)
     plt.ylabel("$\Delta_Y$ (pixels)", fontsize=18)
     ax.tick_params(labelsize=15)
+
+
+
+def gauss2d(x, y, A, xo, yo, sigma_x, sigma_y):
+    Gxy = A*np.exp( - .5 / sigma_x**2 *(x-xo)**2  - .5 / sigma_y**2 * (y-yo)**2 )
+    return Gxy
+
+def gauss2d_resid(params, x,y, data):
+    # A,x0,y0,sigma_x,sigma_y = params
+    Gxy = gauss2d(x,y,*params)
+    return np.sum( (data - Gxy)**2)
+
+
+def check_indexable(refls_data, refls_sim, detector, beam, crystal, hkl_tol=.15 ):
+    """
+    checks whether the reflections in the data are indexed by the
+    crystal model, and further whether  the corresponding miller index
+    is present in the simulated reflections
+
+    :param refls_data: reflection table from data
+    :param refls_sim:  reflection table from simulation
+    :param detector: dxtbx detector
+    :param beam: dxtbx beam
+    :param crystal: dxtbx crystal
+    :param hkl_tol: fractional hkl hypotenuse to determine if a spot was indexed
+    :return: various distance metrics and an array specifying indexability
+    """
+
+    from scipy.spatial import distance
+
+    XYZ_dat = spot_utils.refls_xyz_in_lab(refls_data, detector)
+    IJmm_dat = spot_utils.refls_to_pixelmm(refls_data, detector)
+    H_dat, Hi_dat, Q_dat = spot_utils.refls_to_hkl(
+        refls_data, detector, beam,
+        crystal=crystal, returnQ=True )
+    Hres_dat = np.sqrt(np.sum((H_dat - Hi_dat)**2, 1))  # residual hkl hypotenuse
+
+    XYZ_sim = spot_utils.refls_xyz_in_lab(refls_sim, detector)
+    IJmm_sim = spot_utils.refls_to_pixelmm(refls_sim, detector)
+    H_sim, Hi_sim, Q_sim = spot_utils.refls_to_hkl(
+        refls_sim, detector, beam,
+        crystal=crystal, returnQ=True )
+
+    # make tree for quick lookups
+    HKLsim_tree = cKDTree(Hi_sim)
+
+    all_d, all_dij, all_dQ, all_dvec, all_dijvec,all_dQvec, all_res, all_pid = \
+        [],[],[],[],[],[],[],[]
+
+    indexed = np.zeros( len(refls_data), bool)
+    for i_r,r in enumerate(refls_data):
+        if not Hres_dat[i_r] < hkl_tol:
+            continue  # this reflection is not within HKL tolerance
+
+        mil_idx = Hi_dat[i_r]
+
+        # check the data miller is in the simulated millers
+        miller_dist, i_r_sim = HKLsim_tree.query(mil_idx)
+        if miller_dist > 0:  # the miller index of the data spot was not simulated
+            continue
+
+        dxyz = distance.euclidean(XYZ_dat[i_r], XYZ_sim[i_r_sim])
+        dxyz_vec = XYZ_dat[i_r] - XYZ_sim[i_r_sim]
+
+        dij = distance.euclidean(IJmm_dat[i_r], IJmm_sim[i_r_sim])
+        dij_vec = IJmm_dat[i_r] - IJmm_sim[i_r_sim]
+
+
+        dQ = distance.euclidean(Q_dat[i_r] , Q_sim[i_r_sim])
+        dQ_vec = Q_dat[i_r] - Q_sim[i_r_sim]
+        res = 1./ np.linalg.norm(Q_dat[i_r])
+
+        all_d.append(dxyz)
+        all_dij.append(dij)
+        all_dQ.append (dQ)
+        all_dvec.append( dxyz_vec)
+        all_dijvec.append( dij_vec)
+        all_dQvec.append( dQ_vec)
+        all_res.append( res)
+        all_pid.append( r['panel'])
+        indexed[i_r] = True
+
+    return {'d':all_d, 'dij': all_dij, 'dQ':all_dQ,
+            'dvec':all_dvec, 'dvecij': all_dijvec, 'dvecQ':all_dQvec,
+            'res':all_res, 'pid':all_pid, 'indexed': indexed}
+
+
+def plot(X,Y,Z, cmap, xlim=None, ylim=None):
+    import pylab as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    # Create a surface plot and projected filled contour plot under it.
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
+                    linewidth=1, antialiased=False,
+                    cmap=cmap)
+
+    # Adjust the limits, ticks and view angle
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.set_zlim(Z.min(), Z.max())
+    ax.view_init(27, -21)
+    return ax

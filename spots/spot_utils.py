@@ -14,20 +14,34 @@ from scipy.spatial import cKDTree
 from dials.array_family import flex
 
 
-#def multipanel_refls_to_hkl(refls, detector, beam, crystal):
-#    panel_refls = refls_by_panelname(refls)
-#    all_h = []
-#    all_hi  = []
-#    for pid in panel_refls:
-#        prefls = panel_refls[pid]
-#        h,hi = refls_to_hkl(prefls, detector[pid], beam, crystal)
-#        all_h.append(h)
-#        all_hi.append(hi)
-#    return np.vstack(all_h), np.vstack(all_hi)
+def q_to_hkl(q_vecs, crystal):
+    Ai = sqr(crystal.get_A()).inverse()
+    Ai = Ai.as_numpy_array()
+    HKL = np.dot( Ai, q_vecs.T)
+    HKLi = map( lambda h: np.ceil(h-0.5).astype(int), HKL)
+    return np.vstack(HKL).T, np.vstack(HKLi).T
+
+
+def refls_to_pixelmm(refls, detector):
+    """
+    returns the mm position of the spot in pixels
+    referenced to the panel origin, which I think is the
+    center of the first pixel in memory for the panel
+    :param reflection table
+    :param dxtbx detecotr
+    :return: np.array Nreflsx2 for fast,slow mm coord referenced to panel origin
+        in the plane of the panel
+    """
+    ij_mm = np.zeros( (len(refls),2))
+    for i_r,r in enumerate(refls):
+        panel = detector[r['panel']]
+        i,j,_ = r['xyzobs.px.value']
+        ij_mm[i_r] = panel.pixel_to_millimeter( (i,j) )
+    return ij_mm
 
 
 def refls_to_hkl(refls, detector, beam, crystal,
-                 update_table=False):
+                 update_table=False, returnQ=False):
     """
     convert pixel panel reflections to miller index data
 
@@ -35,7 +49,8 @@ def refls_to_hkl(refls, detector, beam, crystal,
     :param detector:  dxtbx detector model
     :param beam:  dxtbx beam model
     :param crystal: dxtbx crystal model
-    :param as_numpy_arrays: return data as numpy arrays
+    :param update_table: whether to update the refltable
+    :param returnQ: whether to return intermediately computed q vectors
     :return: if as_numpy two Nx3 numpy arrays are returned
         (one for fractional and one for whole HKL)
         else dictionary of hkl_i (nearest) and hkl (fractional)
@@ -49,21 +64,16 @@ def refls_to_hkl(refls, detector, beam, crystal,
     HKL = np.dot( Ai, q_vecs.T)
     HKLi = map( lambda h: np.ceil(h-0.5).astype(int), HKL)
     if update_table:
-        refls['miller_index'] = flex.vec3_int(tuple(map(tuple, HKLi)))
-    return np.vstack(HKL).T, np.vstack(HKLi).T
+        from IPython import embed
+        embed()
+        refls['miller_index'] = flex.vec3_int(tuple(map(tuple, np.vstack(HKLi).T)))
+    if returnQ:
+        return np.vstack(HKL).T, np.vstack(HKLi).T, q_vecs
+    else:
+        return np.vstack(HKL).T, np.vstack(HKLi).T
 
 
-#def multipanel_refls_to_q(refls, detector, beam):
-#    R = refls_by_panelname(refls)
-#    all_q = []
-#    for pid in R:
-#        x,y,z = xyz_from_refl(R[pid])
-#        q_vecs = xy_to_q(x,y,detector[pid], beam)
-#        all_q.append( q_vecs)
-#    return np.vstack( all_q)
-
-
-def refls_to_q(refls, detector, beam, update_table=False,oldmethod=False):
+def refls_to_q(refls, detector, beam, update_table=False):
 
     orig_vecs = {}
     fs_vecs = {}
@@ -97,52 +107,6 @@ def refls_to_q(refls, detector, beam, update_table=False,oldmethod=False):
     return np.vstack(q_vecs)
 
 
-def xy_to_q(x,y, panel, beam, oldmethod=False):
-    """
-    convert pixel coords to q-vectors
-
-    :param x,y:  pixel coordinates of spots as separate lists/arrays
-                x should be the fast-scan coord
-    :param panel: dxtbx detector Panel (detectorNode)
-    :param beam:  dxtbx beam model
-    :param oldmethod: whether to use method 1 below..
-    :return: the Q-vectors corresponding to the spots
-    """
-    if oldmethod:
-        pixsizeFS, pixsizeSS = panel.get_pixel_size()
-        orig = np.array(panel.get_origin())
-        ss = np.array(panel.get_slow_axis())
-        fs = np.array(panel.get_fast_axis())
-        s0 = np.array(beam.get_s0())  # this is already scaled by 1/wavelength
-        pix_mm = np.vstack( [orig + fs*i*pixsizeFS + ss*j*pixsizeSS
-                for i,j in zip(x,y)])
-        s1 = pix_mm / np.linalg.norm( pix_mm,axis=1)[:,None] / beam.get_wavelength()
-        q_vecs = (s1 - s0)
-    else:
-        #pix_mm = panel.pixel_to_millimeter( flex.vec2_double( zip(x,y)))
-        #coords = panel.get_lab_coord( pix_mm)
-        coords = flex.vec3_double(tuple(
-            panel.get_pixel_lab_coord((i,j)) for i,j in zip(x,y) ))
-        coords = coords / coords.norms()
-        q_vecs = coords *(1./beam.get_wavelength()) - beam.get_s0()
-
-        q_vecs = q_vecs.as_double().as_numpy_array().reshape((len(q_vecs), 3))
-
-    return q_vecs
-
-
-def spotdat_xyz_in_lab(spot_data, detector, xy_key="comIpos"):
-    all_spot_lab = []
-    pids = [i for i in range(64) if i in spot_data]
-    for pid in pids:
-        if spot_data[pid] is None:
-            continue
-        spotpix = spot_data[pid][xy_key]
-        panel = detector[pid]
-        all_spot_lab += [panel.get_pixel_lab_coord((xpix,ypix)) for ypix, xpix in spotpix]
-    return np.array(all_spot_lab)
-
-
 def refls_xyz_in_lab(refls, detector, xy_key="xyzobs.px.value"):
     all_refls_lab = []
     for i,r in enumerate(refls):
@@ -152,21 +116,6 @@ def refls_xyz_in_lab(refls, detector, xy_key="xyzobs.px.value"):
         lab_xyz = panel.get_pixel_lab_coord((x,y))
         all_refls_lab.append( lab_xyz)
     return np.array(all_refls_lab)
-
-
-def spots_from_sim(img, thresh=0, as_tuple=False):
-    """
-    :param img:  simtbx simulated image
-    :param thresh:  threshold above which to look for spots
-    :return:
-    """
-    labimg, nlab = ndimage.label(img > thresh)
-    out = ndimage.center_of_mass(img, labimg, range(1, nlab))
-    if as_tuple:  # this option here cause flex likes tuples
-        y,x = zip(*out)
-    else:  # as numpy array
-        y, x = map(np.array, zip(*out))
-    return x,y
 
 
 def strong_spot_mask(refl_tbl, img_size):
@@ -211,23 +160,12 @@ def combine_refls(refl_tbl_lst):
 
 
 def xyz_from_refl(refl, key="xyzobs.px.value"):
+    """returns the xyz of the pixels by default in weird (xpix, ypix, zmm) format"""
     x,y,z = zip( * [refl[key][i] for i in range(len(refl))])
     return x,y,z
 
 
-def add_xy_to_ax_as_patches(xy, patch_type, patch_sty, ax, sizes=None):
-    import matplotlib as mpl
-    patches = [patch_type(xy=(i_, j_), **patch_sty)
-             for i_, j_ in xy]
-    if sizes is not None:
-        if not patch_type == mpl.patches.Circle:
-            print("Cannot update size for non-circle patches")
-        else:
-            for i in range(len(patches)):
-                patches[i].radius = sizes[i]
 
-    patch_coll = mpl.collections.PatchCollection(patches, match_original=True)
-    ax.add_collection(patch_coll)
 
 
 def make_color_data_object(refls, beam, crystal, detector):
@@ -316,134 +254,82 @@ def compute_indexability(refls, color_data, hkl_tol=0.15):
     return indexability
 
 
-def get_spot_data(img, thresh=0, filter=None, **kwargs):
+def add_xy_to_ax_as_patches(xy, patch_type, patch_sty, ax, sizes=None, alpha=1.):
+    import matplotlib as mpl
+    patches = [patch_type(xy=(i_, j_), alpha=alpha, **patch_sty)
+             for i_, j_ in xy]
+    if sizes is not None:
+        if not patch_type == mpl.patches.Circle:
+            print("Cannot update size for non-circle patches")
+        else:
+            for i in range(len(patches)):
+                patches[i].radius = sizes[i]
+
+    patch_coll = mpl.collections.PatchCollection(patches, match_original=True)
+    ax.add_collection(patch_coll)
+
+
+def plot_overlap(refls_simA, refls_simB, refls_data, detector, alpha=.75,
+                 square_s=4, cutoff=4, circ_r=5):
     """
-    TODO: make a elx.refltable return option
-    Kwargs are passed to the filter used to smear the spots
-    :param img: numpy image, assumed to be simulated
-    :param thresh: minimum value, this should be  >= the minimum intensity separating spots..
-    :param filter: a filter to apply to the data, typically one of scipy.ndimage
-        the kwargs will be passed along to this filter
-    :return: useful spot dictionary, numpy version of a reflection table..
-    """
-
-    if filter is not None:
-        labimg, nlab = ndimage.label( filter(img, **kwargs) > thresh)
-    else:
-        labimg, nlab = ndimage.label( img > thresh)
-
-    if nlab == 0:
-        return None
-
-    bboxes = ndimage.find_objects(labimg)
-
-    comIpos = ndimage.center_of_mass(img, labimg, range(1, nlab+1))
-    maxIpos = ndimage.maximum_position(img, labimg, range(1, nlab+1))
-    maxI = ndimage.maximum(img, labimg, range(1, nlab+1))
-    meanI = ndimage.mean(img, labimg, range(1,nlab+1))
-    varI = ndimage.variance(img, labimg, range(1,nlab+1))
-
-    return {'comIpos': comIpos,
-            'bboxes': bboxes,
-            'maxIpos': maxIpos,
-            'maxI': maxI,
-            'meanI': meanI,
-            'varI': varI}
-
-
-
-def plot_overlap(spotdataA, spotdataB, refls, is_multi=True, detector=None):
-    """
-
-    :param spotdataA: return value of get_spot_data method
-    :param spotdataB:
-    :param refls:
-    :return:
+    # so this should change
+    refls tables from simulations A and B as well as the data
+    and a dxtbx detector model
     """
     import pylab as plt
+    pixsize = detector[0].get_pixel_size()[0]
 
     # compute a simple overlap to within 4 pixels, not very important, just quick debugging
-    if is_multi:
-        xA,yA,zA = map( np.array, zip(*spotdat_xyz_in_lab(spotdataA, detector )))
-        xB,yB,zB = map( np.array, zip(*spotdat_xyz_in_lab(spotdataB, detector )))
-        allIA, allIB =[],[]
-        #all_yA, all_xA ,all_yB, all_xB, allIA, allIB = [],[],[],[],[],[]
-        for i in range(64):
-            if i in spotdataA:
-                if spotdataA[i] is not None:
-                    #yA,xA = zip(*spotdataA[i]["comIpos"])
-                    #all_yA.append(yA)
-                    #all_xA.append(xA)
-                    allIA.append(spotdataA[i]['meanI'])
-            if i in spotdataB:
-                if spotdataB[i] is not None:
-                    #yB,xB = zip(*spotdataB[i]["comIpos"])
-                    #all_yB.append(yB)
-                    #all_xB.append(xB)
-                    allIB.append(spotdataB[i]['meanI'])
-        #xA = np.hstack(all_xA)
-        #xB = np.hstack(all_xB)
-        #yA = np.hstack(all_yA)
-        #yB = np.hstack(all_yB)
-        allIB = np.hstack( allIB)
-        allIA = np.hstack(allIA)
-    else:
-        yA, xA = map(np.array, zip(*spotdataA["comIpos"]))
-        yB, xB = map(np.array, zip(*spotdataB["comIpos"]))
+    xA,yA,_ = refls_xyz_in_lab(refls_simA, detector).T
+    xB,yB,_ = refls_xyz_in_lab(refls_simB, detector).T
 
+    allIA = np.array( [r['intensity.sum.value'] for r in refls_simA])
+    allIB = np.array( [r['intensity.sum.value'] for r in refls_simB])
 
     xAB = np.hstack((xA, xB))
     yAB = np.hstack((yA, yB))
     tree = cKDTree(zip(xAB, yAB))
-    if is_multi:
-        xdata,ydata,_ = map( np.array, zip(*refls_xyz_in_lab(refls, detector)))
-    else:
-        xdata, ydata, _ = map(np.array, xyz_from_refl(refls))
-    dist, pos = tree.query(zip(xdata, ydata))
-    missedx, missedy = xdata[dist >= 4], ydata[dist >= 4]
 
-    n_idx = sum(dist < 4)
+
+    xdata,ydata,_ = refls_xyz_in_lab(refls_data, detector).T
+    dist, pos = tree.query(zip(xdata, ydata))
+    missedx, missedy = xdata[dist >= 4*pixsize], ydata[dist >= 4*pixsize]
+
+    n_idx = sum(dist < 4*pixsize)
     n_refl = len(dist)
 
-    from IPython import embed
-    embed()
-
-    s = 4
-    r = 5
+    s = square_s * pixsize  # size of square in pixels
+    r = circ_r * pixsize # size of circle in pixels
     plt.figure()
     ax = plt.gca()
-    Square_style = {"ec": "C2", "fc": "none", "lw": "1", "width": s + 4, "height": s + 4}
-    Square_styleMissed = {"ec": "Deeppink", "fc": "Deeppink", "lw": "1", "width": s + 4, "height": s + 4}
+    Square_style = {"ec": "C2", "fc": "none", "lw": "1", "width": s, "height": s}
+    Square_styleMissed = {"ec": "Deeppink", "fc": "Deeppink", "lw": "1", "width": s, "height": s}
 
     Circle_styleA = {"ec": "C1", "fc": "C1", "lw": "1", "radius": r}
     Circle_styleB = {"ec": "C3", "fc": "C3", "lw": "1", "radius": r}
 
     # size the stots according to mean intensity
-    if is_multi:
-        sizesA = np.log10(allIA)
-        sizesB = np.log10(allIB)
-    else:
-        sizesA = np.log10(spotdataA["meanI"])
-        sizesB = np.log10(spotdataB["meanI"])
+    sizesA = np.log10(allIA)
+    sizesB = np.log10(allIB)
     sizesA -= sizesA.min()
     sizesB -= sizesB.min()
 
-    add_xy_to_ax_as_patches(zip(xA, yA), plt.Circle, Circle_styleA, ax, sizes=sizesA)
-    add_xy_to_ax_as_patches(zip(xB, yB), plt.Circle, Circle_styleB, ax, sizes=sizesB)
+    add_xy_to_ax_as_patches(zip(xA, yA), plt.Circle, Circle_styleA, ax, alpha=alpha, sizes=sizesA)
+    add_xy_to_ax_as_patches(zip(xB, yB), plt.Circle, Circle_styleB, ax, alpha=alpha, sizes=sizesB)
 
     if missedx.size:
-        add_xy_to_ax_as_patches(zip(missedx - s / 2., missedy - s / 2.), plt.Rectangle, Square_styleMissed,
-                                           ax)
-    add_xy_to_ax_as_patches(zip(xdata - s / 2., ydata - s / 2.), plt.Rectangle, Square_style, ax)
+        add_xy_to_ax_as_patches(zip(missedx - s/2., missedy - s/2.), plt.Rectangle, Square_styleMissed,
+                                           ax, alpha=alpha)
+    add_xy_to_ax_as_patches(zip(xdata - s/2., ydata - s/2.), plt.Rectangle, Square_style, ax, alpha=alpha)
 
     # spot_utils.add_xy_to_ax_as_patches(zip(xA - s / 2., yA - s / 2.), plt.Rectangle, Square_styleA, ax)
     # spot_utils.add_xy_to_ax_as_patches(zip(xB - s / 2., yB - s / 2.), plt.Rectangle, Square_styleB, ax)
-    ax.set_ylim(0, 1800)
-    ax.set_xlim(0, 1800)
+    ax.set_ylim(yAB.min()-1, yAB.max()+1)
+    ax.set_xlim(xAB.min()-1, xAB.max()+1)
     ax.set_aspect('equal')
 
-    title = " %d / %d ( %.2f %%) reflections were indexed within 4 pixels" % \
-            (n_idx, n_refl, 100. * n_idx / n_refl)
+    title = " %d / %d ( %.2f %%) reflections were indexed within %d pixels" % \
+            (n_idx, n_refl, 100. * n_idx / n_refl, cutoff)
     ax.set_title(title)
 
     plt.show()
@@ -579,68 +465,7 @@ def select_refl(refl, shot_idx):
     return refl.select(select_me)
 
 
-
-def get_spot_data_multipanel(data, detector, beam, crystal,
-                             pids=None, thresh=0, filter=None,  **kwargs):
-    """
-    TODO: flex.refltable return option
-
-    This is a function for taking images (typically simulated) and
-    grabbing the spots
-
-    :param data:
-    :param detector:
-    :param beam:
-    :param crystal:
-    :param pids:
-    :param thresh:
-    :param filter:
-    :param kwargs:
-    :return:
-    """
-
-    if pids == None:
-        pids = range (len(data))
-    else:
-        assert( len(pids) == len(data))
-
-    spot_data = {}
-    all_q = []
-    all_h = []
-    all_hi = []
-    for pid in pids:
-        img = data[pid]
-        spot_data[pid] = get_spot_data(
-            img,
-            thresh=thresh,
-            filter=filter,
-            **kwargs)
-        if spot_data[pid] is None:
-            continue
-
-        y,x = zip(*spot_data[pid]['comIpos'])
-        detnode = detector[pid]
-        q_vecs = xy_to_q(x,y,detnode, beam)
-        spot_data[pid]["q_vecs"] = q_vecs
-
-        #h, hi = refls_to_hkl((x,y), detnode, beam, crystal)
-
-        #spot_data[pid]['H'] = h
-        #spot_data[pid]['Hi'] = hi
-
-        #all_h.append(h)
-        #all_hi.append(hi)
-        all_q.append(q_vecs)
-    if all_q:
-        spot_data["Q"] = np.vstack(all_q)
-    #if all_h:
-        #spot_data["H"] = np.vstack( all_h)
-        #spot_data["Hi"] = np.vstack( all_hi)
-
-    return spot_data
-
-
-def msisrp_overlap(spot_data, refls, detector, xy_only=False):
+def msisrp_overlap(refls_sim, refls_data, detector, xy_only=False):
     """
     Given a spot_data object and a reflection table
     Find the proximity of each reflection to each spo
@@ -648,8 +473,8 @@ def msisrp_overlap(spot_data, refls, detector, xy_only=False):
     Spot_data is basically a reflection table
     made from the simulated data, using scipy.ndimage
 
-    :param spot_data: spot data object
-    :param refls: reflection tabel
+    :param refls_sim: reflection table for simulated data  spots
+    :param refls: reflection table for strong spots in the data
     :param detector: dxtbx detector model
     :param xy_only: whether to return distances in the plane
         perpendicular to the z coordinate, or full 3D
@@ -658,20 +483,70 @@ def msisrp_overlap(spot_data, refls, detector, xy_only=False):
     """
 
     if xy_only:
-        end=2
+        end=2  # just compare x and y
     else:
-        end=3
+        end=3  # compare distances in 3D xyz
 
-    xyz_spot = spotdat_xyz_in_lab(spot_data, detector)
-    tree = cKDTree(xyz_spot[:,:end])
+    xyz_sim = refls_xyz_in_lab(refls_sim, detector)
+    simtree = cKDTree(xyz_sim[:,:end])
 
-    xyz_refls = refls_xyz_in_lab( refls, detector)
+    xyz_data = refls_xyz_in_lab( refls_data, detector)
 
-    dists, nn = tree.query(xyz_refls[:,:end])
+    dists, nn = simtree.query(xyz_data[:,:end])
 
-    dist_vecs = xyz_refls[:,:end] - tree.data[nn]
+    dist_vecs = xyz_data[:,:end] - simtree.data[nn]
 
     return dists, dist_vecs
+
+
+def refls_from_sims(panel_imgs, detector, beam, thresh=0, filter=None, **kwargs ):
+    """
+    This class is for converting the centroids in the noiseless simtbx images
+    to a multi panel reflection table
+
+    TODO: bring up poor documentation and consider asking the dials team
+    to make a push to beter document for the sake of developers
+    This function took 3 hours to figure out how to do...
+
+    :param panel_imgs: list or 3D array of detector panel simulations
+        currently supports CSPAD only (194x185 shaped panels)
+    :param detector: dxtbx  detector model of a caspad
+    :param beam:  dxtxb beam model
+    :param thresh: threshol intensity for labeling centroids
+    :param filter: optional filter to apply to images before
+        labeling threshold, typically one of scipy.ndimage's filters
+    :param kwargs: kwargs to pass along to the optional filter
+    :return: a reflection table of spot centroids
+    """
+    from dials.algorithms.spot_finding.factory import FilterRunner
+    from dials.model.data import PixelListLabeller, PixelList
+    from dials.algorithms.spot_finding.finder import PixelListToReflectionTable
+    from cxid9114 import utils
+
+    pxlst_labs = []
+    for i in range(len(detector)):
+        plab = PixelListLabeller()
+        img = panel_imgs[i]
+        if filter is not None:
+            mask = filter(img, **kwargs) > thresh
+        else:
+            mask = img > thresh
+        pl = PixelList(0, flex.double(img), flex.bool(mask))
+        plab.add(pl)
+
+        pxlst_labs.append( plab)
+
+    pixlst_to_reftbl = PixelListToReflectionTable(
+        min_spot_size=1,
+        max_spot_size=194*184,
+        filter_spots=FilterRunner(),  # must use a dummie filter runner!
+        write_hot_pixel_mask=False)
+
+    dblock = utils.datablock_from_numpyarrays( panel_imgs, detector, beam)
+    iset = dblock.extract_imagesets()[0]
+    refls = pixlst_to_reftbl(iset, pxlst_labs)[0]
+
+    return refls
 
 
 if __name__=="__main__":

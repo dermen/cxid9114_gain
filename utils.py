@@ -19,7 +19,7 @@ except ImportError:
 class FormatInMemory:
     """
     this class is a special image type
-    necessary to create cctbx imagesets and
+    necessary to create dxtbx imagesets and
     datablocks from numpy array images
     and masks.
     """
@@ -35,11 +35,16 @@ class FormatInMemory:
             self.mask = mask
 
     def get_raw_data(self):
-        return flex.double(self.image)
+        if len(self.image.shape)==2:
+            return flex.double(self.image)
+        else:
+            return tuple( [flex.double(panel) for panel in self.image])
 
     def get_mask(self, goniometer=None):
-        return flex.bool(self.mask)
-
+        if len(self.image.shape)==2:
+            return flex.bool(self.mask)
+        else:
+            return tuple( [flex.bool(panelmask) for panelmask in self.mask])
 
 
 def datablock_from_numpyarrays(image, detector, beam, mask=None):
@@ -49,12 +54,14 @@ def datablock_from_numpyarrays(image, detector, beam, mask=None):
     >> refl = flex.reflection_table.from_observations(dblock, spot_finder_params)
     without having to utilize the harddisk
 
-    :param image:  numpy array image
-    :param mask:  numpy mask
+    :param image:  numpy array image, or list of numpy arrays
+    :param mask:  numpy mask, should be same shape format as numpy array
     :param detector: dxtbx detector model
     :param beam: dxtbx beam model
     :return: datablock for the image
     """
+    if isinstance( image, list):
+        image = np.array( image)
     I = FormatInMemory(image=image, mask=mask)
     reader = MemReader([I])
     masker = MemMasker([I])
