@@ -168,7 +168,6 @@ def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
                                           **kwargs)
             P.adjust_mosaicity(mos_dom, mos_spread)
             P.primer( crystal, en[i_color], flux[i_color], FF[i_color])
-            P.SIM2.verbose = 0
             JR = JitterFactory(crystal, P, R[pid], dat)
             if pid not in out:  # initialize
                 out[pid] = JR.jitter_Amat(scanX, scanY, scanZ, plot=False)
