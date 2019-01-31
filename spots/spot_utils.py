@@ -64,13 +64,11 @@ def refls_to_hkl(refls, detector, beam, crystal,
     HKL = np.dot( Ai, q_vecs.T)
     HKLi = map( lambda h: np.ceil(h-0.5).astype(int), HKL)
     if update_table:
-        from IPython import embed
-        embed()
-        refls['miller_index'] = flex.vec3_int(tuple(map(tuple, np.vstack(HKLi).T)))
-    if returnQ:
-        return np.vstack(HKL).T, np.vstack(HKLi).T, q_vecs
-    else:
-        return np.vstack(HKL).T, np.vstack(HKLi).T
+        refls['miller_index'] = flex.miller_index(len(refls),(0,0,0))
+        mil_idx = flex.vec3_int(tuple(map(tuple, np.vstack(HKLi).T)))
+        for i in range(len(refls)):
+            refls['miller_index'][i] = mil_idx[i]
+    return np.vstack(HKL).T, np.vstack(HKLi).T
 
 
 def refls_to_q(refls, detector, beam, update_table=False):
