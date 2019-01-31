@@ -21,8 +21,27 @@ def q_to_hkl(q_vecs, crystal):
     HKLi = map( lambda h: np.ceil(h-0.5).astype(int), HKL)
     return np.vstack(HKL).T, np.vstack(HKLi).T
 
+
+def refls_to_pixelmm(refls, detector):
+    """
+    returns the mm position of the spot in pixels
+    referenced to the panel origin, which I think is the
+    center of the first pixel in memory for the panel
+    :param reflection table
+    :param dxtbx detecotr
+    :return: np.array Nreflsx2 for fast,slow mm coord referenced to panel origin
+        in the plane of the panel
+    """
+    ij_mm = np.zeros( (len(refls),2))
+    for i_r,r in enumerate(refls):
+        panel = detector[r['panel']]
+        i,j,_ = r['xyzobs.px.value']
+        ij_mm[i_r] = panel.pixel_to_millimeter( (i,j) )
+    return ij_mm
+
+
 def refls_to_hkl(refls, detector, beam, crystal,
-                 update_table=False):
+                 update_table=False, returnQ=False):
     """
     convert pixel panel reflections to miller index data
 
@@ -30,7 +49,8 @@ def refls_to_hkl(refls, detector, beam, crystal,
     :param detector:  dxtbx detector model
     :param beam:  dxtbx beam model
     :param crystal: dxtbx crystal model
-    :param as_numpy_arrays: return data as numpy arrays
+    :param update_table: whether to update the refltable
+    :param returnQ: whether to return intermediately computed q vectors
     :return: if as_numpy two Nx3 numpy arrays are returned
         (one for fractional and one for whole HKL)
         else dictionary of hkl_i (nearest) and hkl (fractional)
@@ -47,7 +67,10 @@ def refls_to_hkl(refls, detector, beam, crystal,
         from IPython import embed
         embed()
         refls['miller_index'] = flex.vec3_int(tuple(map(tuple, np.vstack(HKLi).T)))
-    return np.vstack(HKL).T, np.vstack(HKLi).T
+    if returnQ:
+        return np.vstack(HKL).T, np.vstack(HKLi).T, q_vecs
+    else:
+        return np.vstack(HKL).T, np.vstack(HKLi).T
 
 
 def refls_to_q(refls, detector, beam, update_table=False):
