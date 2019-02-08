@@ -22,8 +22,6 @@ from dxtbx.model.beam import BeamFactory
 from dxtbx.model.crystal import CrystalFactory
 from dxtbx.model.detector import DetectorFactory
 
-from simtbx.nanoBragg import dxtbx_cspad
-
 from dials.algorithms.spot_finding.factory import FilterRunner
 from dials.model.data import PixelListLabeller, PixelList
 from dials.algorithms.spot_finding.finder import PixelListToReflectionTable
@@ -39,10 +37,12 @@ from dials.algorithms.indexing.indexer import master_phil_scope \
     as indexer_phil_scope
 
 
+import dxtbx_cspad
+
 # -------------------
 # adjust these
 n_sim = 20  # how many times to iterate the simulation - index  step
-lab_geom = "canonical"   # can be canonical or cspad
+lab_geom = "cspad"   # can be canonical or cspad
 silence_indexer = True  # silence stills indexer so we can watch the unit cell evolve
 abc_tol = .5  # Allowed Angstrom deviation in the unit cell lengths
 # might also want to adjust, add indexing params below, see variable idxpar

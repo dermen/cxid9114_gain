@@ -5,7 +5,8 @@ import simtbx.nanoBragg
 from dxtbx.model.beam import BeamFactory
 from dxtbx.model.detector import DetectorFactory
 
-from simtbx.nanoBragg import dxtbx_cspad
+
+import dxtbx_cspad
 
 # flat CSPAD
 cspad = DetectorFactory.from_dict(dxtbx_cspad.cspad)  # loads a 64 panel dxtbx cspad
@@ -15,6 +16,7 @@ beam = BeamFactory.simple(1.3)  #  make a simple beam along z
 print "# --- beam centers comparison for canonical setup -- #"
 net_error_flat = 0
 for pid in range(64):
+    print pid
     SIM = simtbx.nanoBragg.nanoBragg(detector=cspad, beam=beam, verbose=0, panel_id=pid)
     b1 = SIM.beam_center_mm
     b2 = cspad[pid].get_beam_centre(beam.get_s0())
@@ -43,6 +45,7 @@ tilted_beam = BeamFactory.from_dict(beam_descr)
 net_error_tilt = 0
 print "# --- beam centers comparison for tilted setup -- #"
 for pid in range(64):
+    print pid
     SIM = simtbx.nanoBragg.nanoBragg(detector=cspad, beam=tilted_beam, verbose=0, panel_id=pid)
 
     b1 = SIM.beam_center_mm
@@ -61,6 +64,7 @@ cspad_mess = DetectorFactory.from_dict(dxtbx_cspad.distorted_cspad)
 net_error_messy = 0
 print "# --- beam centers comparison for distorted cspad -- #"
 for pid in range(64):
+    print pid
     SIM = simtbx.nanoBragg.nanoBragg(detector=cspad_mess, beam=tilted_beam, verbose=0, panel_id=pid)
 
     b1 = SIM.beam_center_mm
