@@ -16,12 +16,13 @@ beam = BeamFactory.simple(1.3)  #  make a simple beam along z
 print "# --- beam centers comparison for canonical setup -- #"
 net_error_flat = 0
 for pid in range(64):
-    print pid
-    SIM = simtbx.nanoBragg.nanoBragg(detector=cspad, beam=beam, verbose=0, panel_id=pid)
+    print "canonical: ", pid
+    SIM = simtbx.nanoBragg.nanoBragg(detector=cspad, beam=beam, 
+        verbose=0, panel_id=pid)
     b1 = SIM.beam_center_mm
     b2 = cspad[pid].get_beam_centre(beam.get_s0())
-    print np.round(b1,2)
-    print np.round(b2,2)
+    print "beam_XY simtbx:  %f, %f" % b1
+    print "beam_XY python:  %f, %f" % b2
     print
 
     net_error_flat +=  np.sum(np.subtract(b1,b2)**2)
@@ -45,13 +46,14 @@ tilted_beam = BeamFactory.from_dict(beam_descr)
 net_error_tilt = 0
 print "# --- beam centers comparison for tilted setup -- #"
 for pid in range(64):
-    print pid
-    SIM = simtbx.nanoBragg.nanoBragg(detector=cspad, beam=tilted_beam, verbose=0, panel_id=pid)
+    print "tilted: ", pid
+    SIM = simtbx.nanoBragg.nanoBragg(detector=cspad, beam=tilted_beam, 
+        verbose=0, panel_id=pid)
 
     b1 = SIM.beam_center_mm
-    b2 = cspad[pid].get_beam_centre(beam.get_s0())
-    print np.round(b1,2)
-    print np.round(b2,2)
+    b2 = cspad[pid].get_beam_centre(tilted_beam.get_s0())
+    print "beam_XY simtbx:  %f, %f" % b1
+    print "beam_XY python:  %f, %f" % b2
     print
     net_error_tilt +=  np.sum(np.subtract(b1,b2)**2)
 
@@ -64,20 +66,21 @@ cspad_mess = DetectorFactory.from_dict(dxtbx_cspad.distorted_cspad)
 net_error_messy = 0
 print "# --- beam centers comparison for distorted cspad -- #"
 for pid in range(64):
-    print pid
-    SIM = simtbx.nanoBragg.nanoBragg(detector=cspad_mess, beam=tilted_beam, verbose=0, panel_id=pid)
+    print "messy: ", pid
+    SIM = simtbx.nanoBragg.nanoBragg(detector=cspad_mess, 
+        beam=tilted_beam, verbose=0, panel_id=pid)
 
     b1 = SIM.beam_center_mm
-    b2 = cspad_mess[pid].get_beam_centre(beam.get_s0())
-    print np.round(b1,2)
-    print np.round(b2,2)
+    b2 = cspad_mess[pid].get_beam_centre(tilted_beam.get_s0())
+    print "beam_XY simtbx:  %f, %f" % b1
+    print "beam_XY python:  %f, %f" % b2
     print
 
     net_error_messy +=  np.sum(np.subtract(b1,b2)**2)
 
-print("Net error for canonical setup: %.4f" % net_error_flat)
-print("Net error for tilted setup: %.4f" % net_error_tilt)
-print("Net error for messy setup: %.4f" % net_error_messy)
+print("Net error for canonical setup: %f" % net_error_flat)
+print("Net error for tilted setup: %f" % net_error_tilt)
+print("Net error for messy setup: %f" % net_error_messy)
 
 assert( np.allclose(net_error_flat, 0))
 assert( np.allclose(net_error_tilt, 0))
