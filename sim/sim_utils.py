@@ -329,7 +329,7 @@ class PatternFactory:
         self.SIM2.Ncells_abc = Ncells_abc
         self.SIM2.interpolate = 0
         self.SIM2.progress_meter = False
-        self.SIM2.verbose = 0
+        self.SIM2.verbose = verbose
         self.SIM2.seed = 9012
         self.default_fcalc = None
         self.default_interp_en = scattering_factors.interp_energies

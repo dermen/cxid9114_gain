@@ -34,26 +34,29 @@ def tilting_plane(img, mask=None, zscore=2 ):
     return ev.reshape( img.shape), out2d
 
 
-def integrate(R, dialsmask, iset, gain=28):
+def integrate(R, badmask, data, gain=28, fit_bg=True):
+    """
+    get the crystal scatter, background scatter, and photon counting noise
+    for the reflections listed in the table R
+    :param R:  reflection table
+    :param badmask: mask in numpy format, same shape as data
+    :param data: data
+    :param gain: detector gain per photon
+    :return: 3 arrays, one for signal, background and noise
+    """
 
     Nrefl = len( R)
-    # load the data into numpy arrays and stack in a long horizontal array
-    # the individual panels have shape (185,194), so this has shape (185, 194 * 64)
-    data = [panel.as_numpy_array() 
-        for panel in iset.get_raw_data(0)] 
 
-    Rpp = spot_utils.refls_by_panelname(R)  # this is a dictionary whose key (0-63) unlock that panels reflections 
+    Rpp = spot_utils.refls_by_panelname(R)  # this is a dictionary whose key (0-63) unlock that panels reflections
     allspotmask = {}
-    badmask = {}
     bgtilt = {}
     for pid in Rpp:
 
         # load the spot mask for all strong spots for this panel 
         allspotmask[pid] = spot_utils.strong_spot_mask( Rpp[pid], ( 185, 194))
-        badmask[pid] = dialsmask[pid].as_numpy_array()
-        
-        bgtilt[pid], _ = tilting_plane( data[pid], 
-                mask= (~allspotmask[pid])*badmask[pid], zscore=8) 
+        if fit_bg:
+            bgtilt[pid], _ = tilting_plane( data[pid],
+                    mask= (~allspotmask[pid])*badmask[pid], zscore=8)
 
     signa = np.zeros( Nrefl)
     bg = np.zeros( Nrefl)
@@ -69,8 +72,10 @@ def integrate(R, dialsmask, iset, gain=28):
         
         #smask = (thisspotmask ^ allspotmask[pid])
      
-        signa[i_r] = data[pid] [ thisspotmask].sum()
-        bg[i_r] = bgtilt[pid][thisspotmask].sum()
+        signa[i_r] = data[pid] [thisspotmask].sum()
+        if fit_bg:
+            bg[i_r] = bgtilt[pid][thisspotmask].sum()
+        # else bg[i_r]  is going to remain 0
         signa[i_r] = (signa[i_r]-bg[i_r]) / gain
         noise[i_r] = np.sqrt(signa[i_r])
         
