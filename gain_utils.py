@@ -5,7 +5,8 @@ from cxid9114 import fit_utils, utils
 from cxid9114.mask import mask_utils
 
 
-def get_gain_dists(panel_data, gain_data, mask_data=None, plot=False, norm=False):
+def get_gain_dists(panel_data, gain_data, mask_data=None, plot=False, norm=False,
+            bins_low=None, bins_high=None):
     """
     this processes the panel data and applies common mode to the panels
     different gain sections individually.
@@ -16,9 +17,11 @@ def get_gain_dists(panel_data, gain_data, mask_data=None, plot=False, norm=False
     panel_data2 = np.zeros_like( panel_data)
 
     #   intensity bins for LD91 (specific)
-    bins_low = np.linspace(-10,20, 600) # in ADU
+    if bins_low is None:
+        bins_low = np.linspace(-10,20, 600) # in ADU
     bc_low = .5*(bins_low[1:] + bins_low[:-1]) # bin centers
-    bins_high = np.linspace(-20,50, 400) # in ADUs
+    if bins_high is None:
+        bins_high = np.linspace(-20,50, 400) # in ADUs
     bc_high = .5*(bins_high[1:] + bins_high[:-1]) # bin centers
 
     i1_low = np.argmin( np.abs(bc_low+10))
@@ -48,7 +51,7 @@ def get_gain_dists(panel_data, gain_data, mask_data=None, plot=False, norm=False
     gauss_params_high.add('wid', value=3, min=1)
     gauss_params_high.add('mu', value=0, min=-3, max=3)
 
-    for i_pan in range(32):
+    for i_pan in range(len(panel_data)):
 
         g = panel_data[i_pan].copy()
         is_low = gain_data[i_pan]*mask_data[i_pan]

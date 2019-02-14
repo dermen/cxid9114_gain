@@ -37,8 +37,7 @@ if HAS_TWO_COLOR:
 #   Parameters
     show_hits = False
     INDEXER = two_color_indexer.indexer_two_color
-    KNOWN_SYMMETRY = crystal.symmetry("79.1,79.1,38.4,90,90,90", "P43212")
-    two_color_indexer.N_UNIQUE_V = 30
+    KNOWN_SYMMETRY = crystal.symmetry("78.95,78.95,38.13,90,90,90", "P43212")
 
     params.refinement.parameterisation.beam.fix = "all"
     params.refinement.parameterisation.detector.fix = "all"

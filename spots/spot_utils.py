@@ -68,7 +68,10 @@ def refls_to_hkl(refls, detector, beam, crystal,
         mil_idx = flex.vec3_int(tuple(map(tuple, np.vstack(HKLi).T)))
         for i in range(len(refls)):
             refls['miller_index'][i] = mil_idx[i]
-    return np.vstack(HKL).T, np.vstack(HKLi).T
+    if returnQ:
+        return np.vstack(HKL).T, np.vstack(HKLi).T, q_vecs
+    else:
+        return np.vstack(HKL).T, np.vstack(HKLi).T
 
 
 def refls_to_q(refls, detector, beam, update_table=False):
@@ -277,7 +280,6 @@ def plot_overlap(refls_simA, refls_simB, refls_data, detector, alpha=.75,
     import pylab as plt
     pixsize = detector[0].get_pixel_size()[0]
 
-    # compute a simple overlap to within 4 pixels, not very important, just quick debugging
     xA,yA,_ = refls_xyz_in_lab(refls_simA, detector).T
     xB,yB,_ = refls_xyz_in_lab(refls_simB, detector).T
 
@@ -291,9 +293,9 @@ def plot_overlap(refls_simA, refls_simB, refls_data, detector, alpha=.75,
 
     xdata,ydata,_ = refls_xyz_in_lab(refls_data, detector).T
     dist, pos = tree.query(zip(xdata, ydata))
-    missedx, missedy = xdata[dist >= 4*pixsize], ydata[dist >= 4*pixsize]
+    missedx, missedy = xdata[dist >= cutoff*pixsize], ydata[dist >= cutoff*pixsize]
 
-    n_idx = sum(dist < 4*pixsize)
+    n_idx = sum(dist < cutoff*pixsize)
     n_refl = len(dist)
 
     s = square_s * pixsize  # size of square in pixels

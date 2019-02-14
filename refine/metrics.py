@@ -291,15 +291,28 @@ def check_indexable(refls_data, refls_sim, detector, beam, crystal, hkl_tol=.15 
 
     indexed = np.zeros( len(refls_data), bool)
     for i_r,r in enumerate(refls_data):
-        if not Hres_dat[i_r] < hkl_tol:
-            continue  # this reflection is not within HKL tolerance
-
+        indexable = True
+        
         mil_idx = Hi_dat[i_r]
+        if not Hres_dat[i_r] < hkl_tol:
+            indexable = False
 
         # check the data miller is in the simulated millers
         miller_dist, i_r_sim = HKLsim_tree.query(mil_idx)
         if miller_dist > 0:  # the miller index of the data spot was not simulated
-            continue
+            indexable = False
+
+        if not indexable:
+            all_d.append(np.nan)
+            all_dij.append(np.nan)
+            all_dQ.append (np.nan)
+            all_dvec.append( np.nan)
+            all_dijvec.append( np.nan)
+            all_dQvec.append( np.nan)
+            all_res.append( np.nan)
+            all_pid.append( np.nan)
+            indexed[i_r] = False
+            continue 
 
         dxyz = distance.euclidean(XYZ_dat[i_r], XYZ_sim[i_r_sim])
         dxyz_vec = XYZ_dat[i_r] - XYZ_sim[i_r_sim]

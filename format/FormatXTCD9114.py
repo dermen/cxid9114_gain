@@ -43,17 +43,15 @@ d9114_locator_str = """
         .type = int
         .help = window size of for the savgol smoothing, should be odd \
                 (in relation to the low/high gain zero peak region)
+    mask = None 
+        .type = str
+        .help = path to 32 panel numpy mask (used in common mode algo ppg)
     }
 """
 
 d9114_locator_scope = phil.parse(d9114_locator_str + locator_str + cspad_locator_str,
                                  process_includes=True)
 
-# load some masks
-MASK1 = mask_utils.load_mask("detail_mask")
-MASK2 = mask_utils.load_mask("corners_mask")
-MASK3 = mask_utils.load_mask("small_regions_mask")
-CSPAD_MASK = MASK1*MASK2*MASK3
 
 class FormatXTCD9114(FormatXTCCspad):
     run_number = None  # type: int
@@ -67,14 +65,12 @@ class FormatXTCD9114(FormatXTCCspad):
         self.cspad = psana.Detector(self.params.detector_address[0])
         self.dark = self.cspad.pedestals(self.run_number).astype(np.float64)
         self.gain = self.cspad.gain_mask(self.run_number) == 1.
-        if CSPAD_MASK is not None:
-            self.cspad_mask = CSPAD_MASK
-        else:
-            self.cspad_mask = np.ones_like( self.gain)
+        
         self.nominal_gain_val = self.cspad._gain_mask_factor
         self.populate_events()
         self.n_images = len(self.times)
         self.params = FormatXTCD9114.get_params(image_file)
+        self._set_cspad_mask()
         self._set_pppg_args()
         self._set_psf()
         self._set_2d_img_info()
@@ -108,6 +104,12 @@ class FormatXTCD9114(FormatXTCCspad):
             return None
         #data = self.get_psana_data(index)* self.cspad_mask
         #assemble_cspad.assemble_cspad(data, self.psf)
+
+    def _set_cspad_mask(self):
+        if self.params.d9114.mask is not None: 
+            self.cspad_mask = np.load(self.params.d9114.mask)
+        else:
+            self.cspad_mask = np.ones( (32,185,388)).astype(bool)
 
     def _set_pppg_args(self):
         """

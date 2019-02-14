@@ -7,33 +7,35 @@ LOW_GAIN_GAUSS_PARAMS = lmfit.Parameters()
 LOW_GAIN_GAUSS_PARAMS.add('wid0', value= 2.2, min=1)
 LOW_GAIN_GAUSS_PARAMS.add('amp0', value= 0.25 , min=0)
 LOW_GAIN_GAUSS_PARAMS.add('mu0', value= 0, min=-0.00001, max=0.00001)
-LOW_GAIN_GAUSS_PARAMS.add('wid1', value= 3.,min=0, max=3)
+LOW_GAIN_GAUSS_PARAMS.add('wid1', value= 3.,min=0) # max=3)
 LOW_GAIN_GAUSS_PARAMS.add('amp1', value=0.01 , min=0)
-LOW_GAIN_GAUSS_PARAMS.add('mu1', value= 4.2 , min=3.5, max=5 )
+LOW_GAIN_GAUSS_PARAMS.add('mu1', value= 4.2 , min=1) # max=5 )
 #LOW_GAIN_GAUSS_PARAMS.add('alpha1', value=-2.2, max=0.2, min=-8)
 
 HIGH_GAIN_GAUSS_PARAMS = lmfit.Parameters()
 HIGH_GAIN_GAUSS_PARAMS.add('wid0', value= 3.,)
 HIGH_GAIN_GAUSS_PARAMS.add('amp0', value= 0.1 , min=0)
 HIGH_GAIN_GAUSS_PARAMS.add('mu0', value= 0 ,min=-0.0001, max=0.0001 )
+HIGH_GAIN_GAUSS_PARAMS.add('off0', value= 0,) #max=32)
 # HIGH_GAIN_GAUSS_PARAMS.add('alpha0', value=2 ,  )
-HIGH_GAIN_GAUSS_PARAMS.add('wid1', value= 1.5, min=0,max=2)
+HIGH_GAIN_GAUSS_PARAMS.add('wid1', value= 1.5, min=1, max=9) #max=2)
 HIGH_GAIN_GAUSS_PARAMS.add('amp1', value= 0.005 , min=0)
-HIGH_GAIN_GAUSS_PARAMS.add('mu1', value= 28, min=24, max=32)
-#HIGH_GAIN_GAUSS_PARAMS.add('alpha1', value=-2)
+HIGH_GAIN_GAUSS_PARAMS.add('mu1', value= 28, min=20) #max=32)
+HIGH_GAIN_GAUSS_PARAMS.add('off1', value= 0,) #max=32)
+HIGH_GAIN_GAUSS_PARAMS.add('alpha1', value=-2)
 
-def Gauss(x,amp,mu,wid):
+def Gauss(x,amp,mu,wid, off=0):
     """returns a Gaussian"""
-    return amp*np.exp( \
+    return off+amp*np.exp( \
         -((x - mu)/wid)**2)
 
 def Cumu(x, mu,alpha):
     """returns a cummulative distribution"""
     return 0.5*( 1 + erf( (alpha*(x-mu))  /np.sqrt(2)) )
 
-def skew_gauss(x,amp,mu,wid,alpha):
+def skew_gauss(x,amp,mu,wid,alpha, off=0):
     """returns a skewed normal dist"""
-    return Gauss(x, amp, mu,wid)*Cumu(x,mu,alpha)*2
+    return Gauss(x, amp, mu,wid, off)*Cumu(x,mu,alpha)*2
 
 def gauss_standard(params, xdata, ydata):
     """
@@ -123,6 +125,10 @@ def fit_high_gain_dist(xdata, ydata, plot=False):
         alpha0 = rp['alpha0'].value
     else:
         alpha0 = 0
+    if 'off0' in rp.keys():
+        off0 = rp['off0'].value
+    else:
+        off0 =0
     amp1 = rp['amp1'].value
     mu1 = rp['mu1'].value
     wid1 = rp['wid1'].value
@@ -130,9 +136,13 @@ def fit_high_gain_dist(xdata, ydata, plot=False):
         alpha1 = rp['alpha1'].value
     else:
         alpha1 = 0
+    if 'off1' in rp.keys():
+        off1 = rp['off1'].value
+    else:
+        off1 =0
 
-    gauss0 = skew_gauss(xdata, amp0,mu0,wid0,alpha0)
-    gauss1 = skew_gauss(xdata, amp1,mu1,wid1,alpha1)
+    gauss0 = skew_gauss(xdata, amp0,mu0,wid0,alpha0, off0)
+    gauss1 = skew_gauss(xdata, amp1,mu1,wid1,alpha1, off1)
 
     if plot:
         plt.figure()

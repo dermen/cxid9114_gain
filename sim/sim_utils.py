@@ -285,7 +285,7 @@ class PatternFactory:
 
     def __init__(self, crystal=None, detector=None, beam=None,
                  Ncells_abc=(10,10,10), Gauss=False, oversample=2, panel_id=0,
-                 recenter=True, verbose=10 ):
+                 recenter=True, verbose=10, profile=None ):
         """
         :param crystal:  dials crystal model
         :param detector:  dials detector model
@@ -312,6 +312,17 @@ class PatternFactory:
             self.SIM2.xtal_shape = shapetype.Gauss
         else:
             self.SIM2.xtal_shape = shapetype.Tophat
+        
+        if profile is not None:  # override above
+            if profile == "gauss":
+                self.SIM2.xtal_shape = shapetype.Gauss
+            elif profile == "tophat":
+                self.SIM2.xtal_shape = shapetype.Tophat
+            elif profile == "round":
+                self.SIM2.xtal_shape = shapetype.Round
+            elif profile == "square":
+                self.SIM2.xtal_shape = shapetype.Square
+        
         self.SIM2.progress_meter = False
         self.SIM2.flux = 1e14
         self.SIM2.beamsize_mm = 0.004
@@ -498,7 +509,7 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=2,
 
 def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                    Gauss=False, oversample=2, Ncells_abc=(5,5,5),verbose=0,
-                   div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15):
+                   div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15, profile=None):
     Npan = len(detector)
     Nchan = len( energies)
 
@@ -517,7 +528,7 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                                Gauss=Gauss,
                                verbose=verbose,
                                Ncells_abc=Ncells_abc,
-                               oversample=oversample)
+                               oversample=oversample, profile=profile)
 
         PattF.adjust_mosaicity(mos_dom, mos_spread)
         PattF.adjust_dispersion( disp_pct)

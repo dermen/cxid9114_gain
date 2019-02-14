@@ -115,7 +115,7 @@ class JitterFactory:
 
 def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
                   ret_best=False, scanX=None, scanY=None, scanZ=None,
-                  mos_dom=1, mos_spread=0.01, **kwargs):
+                  mos_dom=1, mos_spread=0.01,szx=30,szy=30, **kwargs):
     """
     Helper function for doing fast refinements by rocking the U-matrix
     portion of the crystal A matrix
@@ -168,7 +168,7 @@ def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
                                           **kwargs)
             P.adjust_mosaicity(mos_dom, mos_spread)
             P.primer( crystal, en[i_color], flux[i_color], FF[i_color])
-            JR = JitterFactory(crystal, P, R[pid], dat)
+            JR = JitterFactory(crystal, P, R[pid], dat, szx=szx, szy=szy)
             if pid not in out:  # initialize
                 out[pid] = JR.jitter_Amat(scanX, scanY, scanZ, plot=False)
             else:  # just add the overlay from the second color
