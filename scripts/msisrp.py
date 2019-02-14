@@ -35,8 +35,8 @@ mask_file = "../mask/dials_mask_64panels_2.pkl"  # mask file for spot detection
 img_f = "/Users/dermen/cxid9114/multi_run62_hits_wtime.h5"  # dxtbx format file
 out_dir = "results"  # where to dump results
 save_sim = 10  # how often to save an image file
-N = 3
-jitt_ref = False
+N = 1
+jitt_ref = False#True
 # -----------
 
 if not os.path.exists(out_dir):
@@ -82,7 +82,7 @@ FLUX = [1e14, 1e14]  # fluxes of the beams
 #                                     dmin=1.5, ano_flag=True)
 # FF = [Fcalcs, None]
 
-for idx in range(N):
+for idx in range(11,12,1):
 
     iset = loader.get_imageset( img_f)[ idx:idx+1]
     detector = iset.get_detector(0)
@@ -152,7 +152,9 @@ for idx in range(N):
     if not orientAB.refined_experiments.crystals():  # this would probably never happen...
         continue
 
+
     crystalAB = orientAB.refined_experiments.crystals()[0]
+
 
     # identify the panels with the strong spots
     # for these will be used in refinement step below
@@ -181,6 +183,7 @@ for idx in range(N):
                              oversample=2,
                              Gauss=False,
                              mos_dom=2,
+                             verbose=0,
                              mos_spread=0.0,
                              scanX=np.arange(-.35, .35, .025),  # these seemed to be sufficient ranges
                              scanY=np.arange(-.35, .35, .025))
@@ -252,20 +255,27 @@ for idx in range(N):
     # to integrate the pixels on the camera
     # and set up the two color disentangler
     simsAB = sim_utils.sim_twocolors2(
-        cryst_model, detector, iset.get_beam(0), [5000, None],
+        crystalAB, detector, iset.get_beam(0), [5000, None],
         [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
-        [1e14, 1e14], pids=None, Gauss=False, oversample=4,
-        Ncells_abc=(20,20,20), mos_dom=20, mos_spread=0.0)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
+        [1e14, 1e14], pids=None, Gauss=False, verbose=0, oversample=2,
+        Ncells_abc=(6,6,6), mos_dom=20, mos_spread=0.0)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
 
     if idx % save_sim ==0:
         sim_fname = os.path.join( out_dir, "sim64_%d.h5" % idx)
         sim_utils.save_twocolor(simsAB, iset, sim_fname, force=0)
 
-    simsAB_2 = sim_utils.sim_twocolors2(
-        crystalAB, detector, iset.get_beam(0), [5000, None],
-        [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
-        [1e14, 1e14], pids=None, Gauss=False, oversample=4,
-        Ncells_abc=(20,20,20), mos_dom=20, mos_spread=0.0)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
+    if jitt_ref:
+        simsAB_2 = sim_utils.sim_twocolors2(
+            optCrystal, detector, iset.get_beam(0), [5000, None],
+            [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
+            [1e14, 1e14], pids=None, Gauss=False, oversample=4,verbose=1,
+            Ncells_abc=(20,20,20), mos_dom=20, mos_spread=0.0)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
+
+        simsAB_2 = sim_utils.sim_twocolors2(
+            optCrystal, detector, iset.get_beam(0), [5000, None],
+            [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
+            [1e14, 1e14], pids=None, Gauss=False, oversample=4,verbose=1,
+            Ncells_abc=(5,5,5), mos_dom=20, mos_spread=0.0)  # returns a dict of {0: 64panelsim, 1: 64panelsim }
 
 
 
@@ -289,32 +299,68 @@ for idx in range(N):
     # We will run simple thresholding and connected region labeling
     # in order to do spot finding on each of the images
 
+    #from IPython import embed
+    #embed()
+
     # spot data on each colors simulated image
     spot_dataA = spot_utils.get_spot_data_multipanel(
         simsAB[0], detector=detector,
-        beam=beamA, crystal=cryst_model, thresh=0,
+        beam=beamA, crystal=crystalAB, thresh=0,
         filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
 
     spot_dataB = spot_utils.get_spot_data_multipanel(
         simsAB[1],detector=detector,
-        beam=beamB , crystal=cryst_model, thresh=0,
+        beam=beamB , crystal=crystalAB, thresh=0,
         filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
 
-    d, dvecs, best = metrics.indexing_residuals_twocolor(spot_dataA, spot_dataB, refls_strong, detector)
+    d, dvecs, best = metrics.indexing_residuals_twocolor(
+        spot_dataA, spot_dataB, refls_strong, detector)
 
     if jitt_ref:
         spot_dataA_2 = spot_utils.get_spot_data_multipanel(
-            simsAB[0], detector=detector,
-            beam=beamA, crystal=crystalAB, thresh=0,
+            simsAB_2[0], detector=detector,
+            beam=beamA, crystal=optCrystal, thresh=0,
             filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
 
         spot_dataB_2 = spot_utils.get_spot_data_multipanel(
-            simsAB[1],detector=detector,
-            beam=beamB , crystal=crystalAB, thresh=0,
+            simsAB_2[1],detector=detector,
+            beam=beamB , crystal=optCrystal, thresh=0,
             filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
         d2, dvecs2, best2 = metrics.indexing_residuals_twocolor(spot_dataA_2, spot_dataB_2, refls_strong, detector)
 
+    simsAB_2_2 = sim_utils.sim_twocolors2(
+        optCrystal, detector, iset.get_beam(0), [5000, None],
+        [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
+        [1e14, 1e14], pids=None, Gauss=False, verbose=0, oversample=4,
+        Ncells_abc=(20,20,20), mos_dom=20, mos_spread=0.0)
+    spot_dataA_2_2 = spot_utils.get_spot_data_multipanel(
+        simsAB_2_2[0], detector=detector,
+        beam=beamA, crystal=optCrystal, thresh=0,
+        filter=scipy.ndimage.filters.gaussian_filter, sigma=0.)
 
+    spot_dataB_2_2 = spot_utils.get_spot_data_multipanel(
+        simsAB_2_2[1], detector=detector,
+        beam=beamB, crystal=optCrystal, thresh=0,
+        filter=scipy.ndimage.filters.gaussian_filter, sigma=0.)
+
+
+    simsAB_2_1 = sim_utils.sim_twocolors2(
+        crystalAB, detector, iset.get_beam(0), [5000, None],
+        [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
+        [1e14, 1e14], pids=None, Gauss=False, verbose=0, oversample=4,
+        Ncells_abc=(20,20,20), mos_dom=20, mos_spread=0.0)
+    spot_dataA_2_1 = spot_utils.get_spot_data_multipanel(
+        simsAB_2_1[0], detector=detector,
+        beam=beamA, crystal=crystalAB, thresh=0,
+        filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
+
+    spot_dataB_2_1 = spot_utils.get_spot_data_multipanel(
+        simsAB_2_1[1], detector=detector,
+        beam=beamB, crystal=crystalAB, thresh=0,
+        filter=scipy.ndimage.filters.gaussian_filter, sigma=0.2)
+
+    from IPython import embed
+    embed()
 
     #HA, HiA = spot_utils.multipanel_refls_to_hkl(
     #    refls_strong,
@@ -399,6 +445,8 @@ for idx in range(N):
              "detector": detector,
              "spot_dataA": spot_dataA,
              "spot_dataB": spot_dataB,
+             "refined_refl": orientAB.refined_reflections,
+             "indexed_refl": orientAB.indexed_reflections,
              "d": d,
              "dvecs": dvecs,
              "best": best,

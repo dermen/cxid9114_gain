@@ -37,12 +37,15 @@ from dials.algorithms.indexing.indexer import master_phil_scope \
     as indexer_phil_scope
 
 
+from dials.algorithms.indexing import index_reflections
+from dials.algorithms.indexing.stills_indexer import e_refine
+
 import dxtbx_cspad
 
 # -------------------
 # adjust these
 n_sim = 20  # how many times to iterate the simulation - index  step
-lab_geom = "cspad"   # can be canonical or cspad
+lab_geom = "canonical"   # can be canonical or cspad
 silence_indexer = True  # silence stills indexer so we can watch the unit cell evolve
 abc_tol = .5  # Allowed Angstrom deviation in the unit cell lengths
 # might also want to adjust, add indexing params below, see variable idxpar
@@ -154,7 +157,7 @@ def sim_cryst_on_det(crystal, detector, beam, recenter=True):
     pad_pix = []
     for pid in range(len(detector)):
         #print("Simulating into panel %d " % pid)
-        SIM = simtbx.nanoBragg.nanoBragg( detector, beam, panel_id=pid)
+        SIM = simtbx.nanoBragg.nanoBragg( detector, beam, verbose=1,panel_id=pid)
 
         SIM.Amatrix = sqr(crystal.get_A()).transpose().elems
         if recenter:
@@ -162,7 +165,7 @@ def sim_cryst_on_det(crystal, detector, beam, recenter=True):
         SIM.default_F = 100
         SIM.F000 = 0
         SIM.xtal_shape = simtbx.nanoBragg.shapetype.Tophat  # makes nice spots with no shape transforms
-        SIM.oversample = 2
+        SIM.oversample = 5
         SIM.Ncells_abc = (10,10,10)
         SIM.add_nanoBragg_spots()
         pad_pix.append( SIM.raw_pixels.as_numpy_array() )
@@ -198,10 +201,10 @@ def sim_simple(crystal, detector, beam,):
 # Here is our dxtbx crystal description
 # this will be our ground truth
 cryst_descr = {'__id__': 'crystal',
-               'real_space_a': (79., 0, 0),
-               'real_space_b': (0, 79., 0),
-               'real_space_c': (0, 0, 38.),
-               'space_group_hall_symbol': '-P 4 2'}
+               'real_space_a': (150., 0, 0),
+               'real_space_b': (0, 200., 0),
+               'real_space_c': (0, 0, 100.),
+               'space_group_hall_symbol': '-P 2 2'}
 cryst = CrystalFactory.from_dict(cryst_descr)
 
 
@@ -213,33 +216,44 @@ idxpar.indexing.method = "fft1d"
 idxpar.indexing.fft1d.characteristic_grid = 0.029
 idxpar.indexing.multiple_lattice_search.max_lattices = 1
 idxpar.indexing.stills.indexer = 'stills'
-idxpar.indexing.stills.refine_all_candidates = False
-idxpar.indexing.stills.refine_candidates_with_known_symmetry = False
+idxpar.indexing.stills.refine_all_candidates = True
+idxpar.indexing.stills.refine_candidates_with_known_symmetry = True 
 idxpar.indexing.stills.candidate_outlier_rejection = False
 idxpar.indexing.debug = False
 idxpar.refinement.verbosity = 0
-idxpar.indexing.refinement_protocol.mode = "repredict_only"
+#idxpar.indexing.refinement_protocol.mode = "repredict_only"
 idxpar.refinement.parameterisation.beam.fix = "all"
-idxpar.refinement.parameterisation.detector.fix = "all"
+idxpar.refinement.parameterisation.detector.fix_list = ["origin"]
 idxpar.refinement.parameterisation.crystal.fix = "all"
 
 # ------------------------
 
 
 if lab_geom == "canonical":
-    pixsize = .10992  # mm
+    s = 1  # scale factor, divide pixel size by this factor 
+    pixsize = .10992/s # mm
     detdist = 125  # mm
     wavelen = 1.385
-    orig = col((-1536*pixsize/2.,
-                1536*pixsize/2.,
+    orig = col((-s*1536*pixsize/2.,
+                s*1536*pixsize/2.,
                 -detdist))
     # Initialise detector frame
     fast = col((1.0, 0.0, 0.0))
     slow = col((0.0, -1.0, 0.0))
     det = DetectorFactory.make_detector(
         "", fast, slow, orig,
-        (pixsize, pixsize), (1536,1536)) #, trusted_range=(0, 10000000))
-    beam = BeamFactory.simple(wavelen)
+        (pixsize, pixsize), (s*1536,s*1536)) #, trusted_range=(0, 10000000))
+    beam_descr = {
+        'direction': (7.010833160725592e-06, -3.710515413340211e-06, 0.9999999999685403),
+        'divergence': 0.0,
+        'flux': 0.0,
+        'polarization_fraction': 0.999,
+        'polarization_normal': (0.0, 1.0, 0.0),
+        'sigma_divergence': 0.0,
+        'transmission': 1.0,
+        'wavelength': 1.385}
+    #beam = BeamFactory.simple(wavelen)
+    beam = BeamFactory.from_dict(beam_descr)
 
 elif lab_geom == "cspad":
     det = DetectorFactory.from_dict(dxtbx_cspad.cspad)
@@ -261,20 +275,24 @@ pix = sim_cryst_on_det(cryst, det, beam)
 truth_refls = refls_from_sims(pix, det, beam)
 dblock = datablock_from_numpyarrays(pix, det, beam)
 isets = dblock.extract_imagesets()
+iset = isets[0]
 
 
 # current reflection table
 curr_refls = copy.deepcopy(truth_refls)
+curr_det = copy.deepcopy(det)
 
 all_crysts = []
 _stdout = sys.stdout
 for _ in range(n_sim):
-    for i in range(len(curr_refls)):
-        x,y,z = curr_refls[i]['xyzobs.px.value']
-        curr_refls['xyzobs.px.value'][i] = x-1, y-1,z
+    #for i in range(len(curr_refls)):
+    #    x,y,z = curr_refls[i]['xyzobs.px.value']
+    #    curr_refls['xyzobs.px.value'][i] = x-1, y-1,z
+    iset.set_detector( curr_det)
+    
     orient = indexer_base.from_parameters(
         reflections=curr_refls,
-        imagesets=isets,  # there is only one
+        imagesets=[iset],  # there is only one
         params=idxpar)
 
     try:
@@ -290,14 +308,18 @@ for _ in range(n_sim):
         break
 
     new_cryst = orient.refined_experiments.crystals()[0]
-    pix = sim_cryst_on_det(new_cryst, det, beam)
-    curr_refls = refls_from_sims(pix, det,beam)
+    
+    curr_det = orient.refined_experiments.detectors()[0]
+
+    pix = sim_cryst_on_det(new_cryst, curr_det, beam)
+    curr_refls = refls_from_sims(pix, curr_det,beam)
 
     # now lets check the overlap
     # and that its reasonable and centered on 0
     all_crysts.append( new_cryst)
     print np.round( new_cryst.get_unit_cell().parameters(), 2)
-
+    print curr_det[0].get_beam_centre(beam.get_s0())
+    print
 # assert the cell lengths havent changed too much
 a,b,c,_,_,_ = cryst.get_unit_cell().parameters()
 a2,b2,c2,_,_,_ = new_cryst.get_unit_cell().parameters()

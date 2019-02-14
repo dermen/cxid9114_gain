@@ -161,8 +161,8 @@ def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
     R = spot_utils.refls_by_panelname(refls)
     out = {}
     for i_color in range(len(en)):
-        for pid,dat in izip(panel_ids, data_imgs):
-            print i_color+1 , len(en), pid+1, len( panel_ids)
+        for i_pid, (pid,dat) in enumerate(izip(panel_ids, data_imgs)):
+            print i_color+1 , len(en), i_pid+1, len( panel_ids)
             P = sim_utils.PatternFactory( detector=det, beam=beam,
                                           panel_id=pid, recenter=True,
                                           **kwargs)

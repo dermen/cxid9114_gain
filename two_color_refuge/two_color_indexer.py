@@ -57,6 +57,8 @@ def index_reflections_detail(debug, experiments,
   ''' overwrites base class index_reflections function and assigns spots to
      their corresponding experiment (wavelength)'''
 
+  from IPython import embed
+  embed()
   # initialize each reflections miller index to 0,0,0
   reflections['miller_index'] = flex.miller_index(len(reflections), (0,0,0))
 

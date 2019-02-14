@@ -31,7 +31,7 @@ class FormatInMemory:
             self.mask = np.ones_like( self.image).astype(np.bool)
         else:
             assert (mask.shape==image.shape)
-            assert( self.mask.dtype == bool)
+            assert( mask.dtype == bool)
             self.mask = mask
 
     def get_raw_data(self):
@@ -62,6 +62,9 @@ def datablock_from_numpyarrays(image, detector, beam, mask=None):
     """
     if isinstance( image, list):
         image = np.array( image)
+    if mask is not None:
+        if isinstance( mask, list):
+            mask = np.array(mask).astype(bool)
     I = FormatInMemory(image=image, mask=mask)
     reader = MemReader([I])
     masker = MemMasker([I])

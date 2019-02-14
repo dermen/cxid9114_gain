@@ -197,3 +197,4 @@ $P_{\text{Channel}}$ is the summed intensities over all non-zero pixels in the s
 
 Clearly there are too many unknowns $G$, $I_{\text{Blue}}$, $I_{\text{Red}}$ to be treated by a single equation. The idea is that there will be many residuals on each image, giving us the per-image $G$ factor, and there will be many observations of $I_{\text{Channel}}$ over the multi-image dataset, so we get a large overdetermined least-squares problem.
 
+:q

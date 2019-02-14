@@ -374,6 +374,30 @@ def get_spot_roi( refl, dxtbx_image_size, szx=10, szy=10):
     return rois
 
 
+def get_fs_rois( f,s, shape_fs, szx=10, szy=10):
+    """
+    get the regions of interest around each reflection
+    :param f: fast scan coords
+    :param s: slow scan coords
+    :param shape_fs, image shape in fast-scan, slow-scan
+    :param szx: region of interest dimension by 2
+    :param szy: region of interest dimension by 2
+    :return: list of tuples of the form ((x1,x2), (y1,y1))
+    specifying the ROIs to be used with simtbx
+    """
+    rois = []
+    for i, j in zip(f, s):
+        i1 = max(int(i) - szx, 0)
+        i2 = min(int(i) + szx, shape_fs[0])
+
+        j1 = max(int(j) - szy, 0)
+        j2 = min(int(j) + szy, shape_fs[1])
+
+        rois.append(((i1, i2), (j1, j2)))
+
+    return rois
+
+
 def count_spots(pickle_fname):
     """
     Count the number of spots in a pickle file per shot index

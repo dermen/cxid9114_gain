@@ -19,21 +19,18 @@ from cxid9114.sim import sim_utils
 from cxid9114 import utils
 from copy import deepcopy
 from cxid9114 import parameters
-from cxid9114.spots import spot_utils
 from cxid9114.index.sad import params as sad_index_params
-from cxid9114.index.ddi import params as mad_index_params
 from libtbx.utils import Sorry
 from cxid9114.spots import spot_utils
 from dials.algorithms.indexing.indexer import indexer_base
 from dials.command_line.find_spots import phil_scope as find_spots_phil_scope
 from libtbx.phil import parse
-from cxi_xdr_xes.two_color.two_color_indexer import indexer_two_color
 import dxtbx
 from dxtbx.datablock import DataBlockFactory
 from dials.array_family import flex
-from dxtbx.model import Detector
 import os
 import sys
+
 fcalc_f = "/Users/dermen/cxid9114_gain/sim/fcalc_slim.pkl"
 #outdir = "ssirp_cell.beam"
 #outdir = "
@@ -130,6 +127,8 @@ for idx in range(N):
     
     dblock = DataBlockFactory.from_imageset(iset)[0]
     refls_strong = flex.reflection_table.from_observations(dblock, spot_par)
+
+    refls_moder = flex.reflection_table.from_observations(dblock, spot_par_moder)
 
     if len(refls_strong) < 10:
         print("Not enough spots shot %d, continuing!" % idx)

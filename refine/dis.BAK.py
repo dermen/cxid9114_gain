@@ -16,7 +16,7 @@ from cxid9114 import parameters
 from cxid9114.index.sad import params as sad_index_params
 from cxid9114.index.ddi import params as mad_index_params
 
-from cxid9114.spots import count_spots
+from cxid9114.spots import spot_utils
 from dials.command_line.find_spots import phil_scope as find_spots_phil_scope
 from libtbx.phil import parse
 from cxi_xdr_xes.two_color.two_color_indexer import indexer_two_color
@@ -87,7 +87,7 @@ isetB.set_beam(BeamB)
 
 # index two color pattern using fft1d
 orientA = indexer_base.from_parameters(
-    reflections=count_spots.as_single_shot_reflections(refls, inplace=False),
+    reflections=spot_utils.as_single_shot_reflections(refls, inplace=False),
     imagesets=[isetA],
     params=sad_index_params)
 orientA.index()
@@ -95,7 +95,7 @@ crystalA = orientA.refined_experiments.crystals()[0]
 
 # try with other color
 orientB = indexer_base.from_parameters(
-    reflections=count_spots.as_single_shot_reflections(refls, inplace=False),
+    reflections=spot_utils.as_single_shot_reflections(refls, inplace=False),
     imagesets=[isetB],
     params=sad_index_params)
 orientB.index()
@@ -105,7 +105,7 @@ crystalB = orientB.refined_experiments.crystals()[0]
 # 2 color indexer of 2 color pattern
 # ==================================
 orientAB = indexer_two_color(
-    reflections=count_spots.as_single_shot_reflections(refls, inplace=False),
+    reflections=spot_utils.as_single_shot_reflections(refls, inplace=False),
     imagesets=[iset],
     params=mad_index_params)
 orientAB.index()

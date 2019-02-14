@@ -117,6 +117,7 @@ class stills_indexer(indexer_base):
     # specific modifications (don't re-index after choose best orientation matrix, but use the indexing from
     # choose best orientation matrix, also don't use macrocycles) of refinement after indexing.
     # 2017 update: do accept multiple lattices per shot
+
     if self.params.refinement_protocol.n_macro_cycles > 1:
       raise Sorry("For stills, please set refinement_protocol.n_macro_cycles = 1")
 
@@ -153,8 +154,6 @@ class stills_indexer(indexer_base):
         if len(experiments) == 0:
           raise Sorry("No suitable lattice could be found.")
       else:
-        print("\n\n Do you really want to go here? Dont go here!\n\n")
-        exit()
         try:
           new = self.find_lattices()
           experiments.extend(new)
@@ -339,6 +338,7 @@ class stills_indexer(indexer_base):
         ref_predictor(refined_reflections)
 
       elif self.params.refinement_protocol.mode == 'ignore':
+        exit()
         refined_experiments, refined_reflections = experiments, reflections_for_refinement
       else:
         try:
@@ -498,7 +498,6 @@ class stills_indexer(indexer_base):
 
     for icm,cm in enumerate(candidate_orientation_matrices):
       # Index reflections in P1
-      print (cm)
       print("\n\n REFINING CANDIDATE HERE\n\n",)
       sel = ((self.reflections['id'] == -1))
       refl = self.reflections.select(sel)
