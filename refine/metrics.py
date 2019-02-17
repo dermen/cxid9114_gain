@@ -356,3 +356,104 @@ def plot(X,Y,Z, cmap, xlim=None, ylim=None):
     ax.set_zlim(Z.min(), Z.max())
     ax.view_init(27, -21)
     return ax
+
+
+def check_indexable2(refls_data, refls_sim, detector, beam, crystal, hkl_tol=.15 ):
+    """
+    checks whether the reflections in the data are indexed by the
+    crystal model, and further whether  the corresponding miller index
+    is present in the simulated reflections
+
+    :param refls_data: reflection table from data
+    :param refls_sim:  reflection table from simulation
+    :param detector: dxtbx detector
+    :param beam: dxtbx beam
+    :param crystal: dxtbx crystal
+    :param hkl_tol: fractional hkl hypotenuse to determine if a spot was indexed
+    :return: various distance metrics and an array specifying indexability
+    """
+
+    from scipy.spatial import distance
+
+    XYZ_dat = spot_utils.refls_xyz_in_lab(refls_data, detector)
+    IJmm_dat = spot_utils.refls_to_pixelmm(refls_data, detector)
+    H_dat, Hi_dat, Q_dat = spot_utils.refls_to_hkl(
+        refls_data, detector, beam,
+        crystal=crystal, returnQ=True )
+    Hres_dat = np.sqrt(np.sum((H_dat - Hi_dat)**2, 1))  # residual hkl hypotenuse
+
+    XYZ_sim = spot_utils.refls_xyz_in_lab(refls_sim, detector)
+    IJmm_sim = spot_utils.refls_to_pixelmm(refls_sim, detector)
+    H_sim, Hi_sim, Q_sim = spot_utils.refls_to_hkl(
+        refls_sim, detector, beam,
+        crystal=crystal, returnQ=True )
+
+    # make tree for quick lookups
+    HKLsim_tree = cKDTree(Hi_sim)
+
+    all_d, all_dij, all_dQ, all_dvec, all_dijvec,all_dQvec, all_res, all_pid = \
+        [],[],[],[],[],[],[],[]
+
+    all_intens_sim = []
+    all_sim_idx = []
+    sim_pid = []
+    indexed = np.zeros( len(refls_data), bool)
+    for i_r,r in enumerate(refls_data):
+        indexable = True
+        
+        mil_idx = Hi_dat[i_r]
+        if not Hres_dat[i_r] < hkl_tol:
+            indexable = False
+
+        # check the data miller is in the simulated millers
+        miller_dist, i_r_sim = HKLsim_tree.query(mil_idx)
+        if miller_dist > 0:  # the miller index of the data spot was not simulated
+            indexable = False
+
+        res = 1./ np.linalg.norm(Q_dat[i_r])
+        pid = r['panel']
+        if not indexable:
+            all_d.append(np.nan)
+            all_dij.append(np.nan)
+            all_dQ.append (np.nan)
+            all_dvec.append( np.nan)
+            all_dijvec.append( np.nan)
+            all_dQvec.append( np.nan)
+            all_res.append(res)
+            all_pid.append(pid)
+            indexed[i_r] = False
+            all_intens_sim.append(np.nan)
+            all_sim_idx.append( np.nan)
+            sim_pid.append( np.nan)
+            continue 
+
+        dxyz = distance.euclidean(XYZ_dat[i_r], XYZ_sim[i_r_sim])
+        dxyz_vec = XYZ_dat[i_r] - XYZ_sim[i_r_sim]
+
+        dij = distance.euclidean(IJmm_dat[i_r], IJmm_sim[i_r_sim])
+        dij_vec = IJmm_dat[i_r] - IJmm_sim[i_r_sim]
+
+        dQ = distance.euclidean(Q_dat[i_r] , Q_sim[i_r_sim])
+        dQ_vec = Q_dat[i_r] - Q_sim[i_r_sim]
+        #res = 1./ np.linalg.norm(Q_dat[i_r])
+
+        all_d.append(dxyz)
+        all_dij.append(dij)
+        all_dQ.append (dQ)
+        all_dvec.append( dxyz_vec)
+        all_dijvec.append( dij_vec)
+        all_dQvec.append( dQ_vec)
+        all_res.append( res)
+        all_pid.append( pid)
+        sim_pid.append( refls_sim['panel'][i_r_sim] )  # better be the same as the data!
+        indexed[i_r] = True
+
+        all_intens_sim.append( refls_sim['intensity.sum.value'][i_r_sim])
+        all_sim_idx.append( i_r_sim)
+
+    return {'d':all_d, 'dij': all_dij, 'dQ':all_dQ,
+            'dvec':all_dvec, 'dvecij': all_dijvec, 'dvecQ':all_dQvec,
+            'res':all_res, 'pid':all_pid, 'indexed': indexed, 
+            'hkl': Hi_dat, 'hkl_res' :  Hres_dat, 
+            "sim_intens": all_intens_sim, "sim_refl_idx": all_sim_idx, 'sim_pid': sim_pid}
+

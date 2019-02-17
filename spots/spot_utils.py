@@ -12,6 +12,7 @@ MAX_FILT = ndimage.maximum_filter
 from scitbx.matrix import sqr
 from scipy.spatial import cKDTree
 from dials.array_family import flex
+from dials.algorithms.shoebox import MaskCode
 
 
 def q_to_hkl(q_vecs, crystal):
@@ -119,18 +120,62 @@ def refls_xyz_in_lab(refls, detector, xy_key="xyzobs.px.value"):
     return np.array(all_refls_lab)
 
 
+def fs_ss_to_q(fs, ss, pids, detector, beam):
+
+    orig_vecs = {}
+    fs_vecs = {}
+    ss_vecs = {}
+    u_pids = set(pids)
+
+    for pid in u_pids:
+        orig_vecs[pid] = np.array(detector[pid].get_origin())
+        fs_vecs[pid] = np.array(detector[pid].get_fast_axis())
+        ss_vecs[pid] = np.array(detector[pid].get_slow_axis())
+
+    s1_vecs = []
+    q_vecs = []
+    for i_fs, i_ss, pid in zip( fs,ss, pids):
+        panel = detector[pid]
+        orig = orig_vecs[pid] #panel.get_origin()
+        fs = fs_vecs[pid] #panel.get_fast_axis()
+        ss = ss_vecs[pid] #panel.get_slow_axis()
+
+        fs_pixsize, ss_pixsize = panel.get_pixel_size()
+        s1 = orig + i_fs*fs*fs_pixsize + i_ss*ss*ss_pixsize  # scattering vector
+        s1 = s1 / np.linalg.norm(s1) / beam.get_wavelength()
+        s1_vecs.append( s1)
+        q_vecs.append( s1-beam.get_s0())
+
+    return np.vstack(q_vecs)
+
+
 def strong_spot_mask(refl_tbl, img_size):
     Nrefl = len( refl_tbl)
     masks = [ refl_tbl[i]['shoebox'].mask.as_numpy_array()
               for i in range(Nrefl)]
+    code = MaskCode.Foreground.real
+
     x1, x2, y1, y2, z1, z2 = zip(*[refl_tbl[i]['shoebox'].bbox
                                    for i in range(Nrefl)])
     spot_mask = np.zeros(img_size, bool)
     for i1, i2, j1, j2, M in zip(x1, x2, y1, y2, masks):
         slcX = slice(i1, i2, 1)
         slcY = slice(j1, j2, 1)
-        spot_mask[slcY, slcX] = M == 5
+        spot_mask[slcY, slcX] = M & code == code
     return spot_mask
+
+#def strong_spot_mask(refl_tbl, img_size):
+#    Nrefl = len( refl_tbl)
+#    masks = [ refl_tbl[i]['shoebox'].mask.as_numpy_array()
+#              for i in range(Nrefl)]
+#    x1, x2, y1, y2, z1, z2 = zip(*[refl_tbl[i]['shoebox'].bbox
+#                                   for i in range(Nrefl)])
+#    spot_mask = np.zeros(img_size, bool)
+#    for i1, i2, j1, j2, M in zip(x1, x2, y1, y2, masks):
+#        slcX = slice(i1, i2, 1)
+#        slcY = slice(j1, j2, 1)
+#        spot_mask[slcY, slcX] = M == 5
+#    return spot_mask
 
 
 def combine_refls(refl_tbl_lst):
