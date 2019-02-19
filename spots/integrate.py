@@ -139,5 +139,3 @@ def integrate2(R, badmask, data, gain=28, fit_bg=True, zscore=8, sz=8):
 
     return signa, bg, noise, pix_per
 
-
-
