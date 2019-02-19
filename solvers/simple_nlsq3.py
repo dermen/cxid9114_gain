@@ -22,6 +22,8 @@ method = "lsmr"
 
 gdata = np.random.randint(0,Ngain,Nmeas)
 xdata = np.random.uniform(xmin,xmax,Nmeas)
+
+# numpy voodoo, just evaluates ydata for each measurement, given gain and xdata
 ydata = np.random.normal( np.sum(Amps)*np.exp(-xdata**2)*gains[gdata],0.5)
 
 class TestSolver:
@@ -72,7 +74,7 @@ class TestSolver:
         self.PRM += a  # update
         print "Residual: %.2e" % np.dot(self.Beta, self.Beta)
 
-PRM = np.array([8,15, .9, 1.1, 2])  # initial guess: Amp0,Amp1, Amp2, gain0, gain1, gain2
+PRM = np.array([8,15, .9, 1.1, 2])  # initial guess: Amp0,Amp1, gain0, gain1, gain2
 
 init_amps = PRM[:2]
 init_gains = PRM[2:]
@@ -97,7 +99,6 @@ print "Amps fit: ", final_amp
 print "Did I uncouple the gain and amplitude?"
 print
 
-embed()
 
 # plot
 import pylab as plt
@@ -114,8 +115,4 @@ for i_g in range(Ngain):
     plt.legend(("init","final","data"))
 
 plt.show()
-
-
-
-
 
