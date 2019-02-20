@@ -6,44 +6,49 @@ import numpy as np
 from IPython import embed
 from scipy.sparse.linalg import lsmr
 from scipy.sparse import coo_matrix
+import sys
 
 np.random.seed(hash("no problem is insoluble in all conceivable circumstances")&((1<<32)-1) )
 
-Nshot = 1000
-max_meas_per_shot = 40
+Nshot = 10000  # total number of shots, each will get unique gain value
+max_meas_per_shot = 80  # e.g. how many Bragg reflections per shot
 min_meas_per_shot = 10
-xmin = -.1
+xmin = -.1   # Gaussian amplitudes centered at x=0, so we will sample near peak amplitude
 xmax = .1
-Namp = 100
+Namp = 1000
 gains = np.random.uniform(1,3,Nshot)
 AmpsA = np.random.randint( 10,50,Namp)  # channel A amplitude
 AmpsB = np.random.uniform(AmpsA*.8,AmpsA*1.2)  # channel B amplitude
 Ngain = Nshot
 
 
-Niter = 10
+Niter = 5
 method = "lsmr"
 # parameters are the amplitudes and the gains
 
 # for each shot, pick some amplitudes and a gain
 gdata = []
 adata = []
-Nmeas = 0
+Nmeas_per = []
 for i_shot in range( Nshot):
-    if i_shot % 10 ==0:
-        print i_shot, Nshot
+    if i_shot % 50 ==0:
+        print "\rBuilding data %d / %d shots" % (i_shot+1, Nshot),
+        sys.stdout.flush()  # no new line
+
     Nmeas_this_shot = np.random.randint(min_meas_per_shot, max_meas_per_shot+1)
+
     amps = np.random.choice( range(Namp), size=Nmeas_this_shot, replace=False)
     adata.append( amps)
 
     gain = np.random.choice(range(Ngain))
     gdata.append( [gain] * Nmeas_this_shot)
-    Nmeas += Nmeas_this_shot
 
+    Nmeas_per.append( Nmeas_this_shot)
+print "\rBuilding data %d / %d shots" % (Nshot, Nshot)
+
+Nmeas = np.sum( Nmeas_per)  # total measurements
 gdata = np.hstack( gdata)
 adata = np.hstack( adata)
-#gdata = np.random.randint(0,Ngain,Nmeas)
-#adata = np.random.randint( 0, Namp, Nmeas)
 xdata = np.random.uniform(xmin,xmax,Nmeas)
 
 # sum the two channel amplitudes for each measurement
@@ -126,8 +131,11 @@ init_amp_sums = np.array(zip(AmpA_guess[adata], AmpB_guess[adata])).sum(axis=1)
 init_yfit = init_amp_sums*np.exp(-xdata**2) * Gain_guess[gdata]
 
 solver = TestSolver(PRM, xdata, ydata, gdata, adata, Namp, Ngain)
+import time
+tstart = time.time()
 for i in range(Niter):
     solver.iterate()
+time_solve = time.time() - tstart
 
 AmpA_final = solver.PRM[:Namp]
 AmpB_final = solver.PRM[Namp:2*Namp]
@@ -145,38 +153,40 @@ print "AmpsB fit: ", AmpB_final
 print "Did I uncouple the gain and amplitude?"
 print
 
-
 # plot
 import pylab as plt
 
+density = float(solver.BS.count_nonzero()) / np.product(solver.BS.get_shape())
+sparsity = 1 - density
+
 fig,axs = plt.subplots(1,3, figsize=(10,4)) #plt.figure()
-plt.suptitle("Fit analysis; %d Amplitudes (x2 channels) and %d gains (shots); %d measurements" \
-             % (Namp, Ngain, Nmeas))
+plt.suptitle("Fit analysis; %d Amplitudes (x2 channels) and %d gains (shots); %d measurements\n Sparsity=%.5g (%.2g %% occupancy in Jacobian); %d iters; time to solve: %.2f sec" \
+             % (Namp, Ngain, Nmeas, sparsity, density*100, solver.niters, time_solve))
 
 axs[0].set_title("$(A_A + A_B) * G $")
 axs[0].plot(amp_sums*gains[gdata],
-            init_amp_sums*Gain_guess[gdata],'.', ms=.9)
+            init_amp_sums*Gain_guess[gdata],'.', ms=.5)
 axs[0].plot(amp_sums*gains[gdata],
-            final_amp_sums*Gain_final[gdata],'.', ms=.9)
+            final_amp_sums*Gain_final[gdata],'.', ms=.5)
 axs[0].set_xlabel("data")
 axs[0].set_ylabel("fit")
 axs[0].legend(("init guess", "final fit"), markerscale=10)
 
 
 axs[1].set_title("$(A_A)$")
-axs[1].plot(AmpsA, AmpA_guess,'s', )
-axs[1].plot(AmpsA, AmpA_final,'o', )
+axs[1].plot(AmpsA, AmpA_guess,'s', ms=4)
+axs[1].plot(AmpsA, AmpA_final,'o', ms=4)
 axs[1].set_xlabel("data")
 axs[1].set_ylabel("fit")
 axs[1].legend(("init guess", "final fit"))
 
 axs[2].set_title("$(A_B)$")
-axs[2].plot(AmpsB, AmpB_guess,'s', )
-axs[2].plot(AmpsB, AmpB_final,'o', )
+axs[2].plot(AmpsB, AmpB_guess,'s', ms=4)
+axs[2].plot(AmpsB, AmpB_final,'o', ms=4)
 axs[2].set_xlabel("data")
 axs[2].set_ylabel("fit")
 axs[2].legend(("init guess", "final fit"))
 
-plt.subplots_adjust(left=.07, right=.95, top=.85, wspace=.3)
+plt.subplots_adjust(left=.07, right=.95, top=.8, wspace=.3)
 plt.show()
 
