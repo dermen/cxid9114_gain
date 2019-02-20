@@ -55,8 +55,8 @@ class TestSolver:
 
             self.Beta[i_meas] = ydata - (amp0_guess+amp1_guess) * gain_guess * self.exp_factor[i_meas]
 
-            dA0 = amp1_guess*gain_guess * self.exp_factor[i_meas]
-            dA1 = amp0_guess*gain_guess * self.exp_factor[i_meas]
+            dA0 = gain_guess * self.exp_factor[i_meas]
+            dA1 = gain_guess * self.exp_factor[i_meas]
             dG  = (amp0_guess + amp1_guess) * self.exp_factor[i_meas]
 
             BIG_col.extend([0,1,2+gdata])
