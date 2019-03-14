@@ -2,7 +2,7 @@ import pandas
 import numpy as np
 
 
-def gen_data(noise_lvl=0):
+def gen_data(noise_lvl=0, Nshot_max = None):
 
     #K = 10000**2 * 1e12
     #df = pandas.read_hdf("r62_simdata2_fixed_oversamp_labeled.hdf5","data")
@@ -19,25 +19,31 @@ def gen_data(noise_lvl=0):
     #np.savez("data", ydata=ydata, gains=gains, FAdat=FAdat, FVdata=FBdat, PAdata=PAdata,
     #         PBdata=PBdata,LAdata=LAdata, LBdata=LBdata, adata=adata, gdata=gdata )
 
-
-
     data = np.load("data.npz")
-    ydata = data["ydata"]
-    LAdata = data["LAdata"]
-    LBdata = data["LBdata"]
-    PAdata = data["PAdata"]
-    PBdata = data["PBdata"]
-    FAdat = data["FAdat"]
-    FBdat = data["FVdata"]  # NOTE: type in stored data table
+
+
     gdata = data["gdata"]
-    adata = data["adata"]
-    gains = data["gains"]
+    if Nshot_max is not None:
+        sel =  gdata < Nshot_max
+    else:
+        sel = np.ones(gdata.shape[0], bool)
+    gdata = data["gdata"][sel]
+    ydata = data["ydata"][sel]
+    LAdata = data["LAdata"][sel]
+    LBdata = data["LBdata"][sel]
+    PAdata = data["PAdata"][sel]
+    PBdata = data["PBdata"][sel]
+    FAdat = data["FAdat"][sel]
+    FBdat = data["FVdata"][sel]  # NOTE: type in stored data table
+    adata = data["adata"][sel]
+    gains = data["gains"][sel]
 
     # remap adata and gdata
-    amp_remap = {a:i_a for i_a, a in enumerate(set(adata))}
-    adata = np.array([amp_remap[a] for a in adata])
-    gain_remap = {g:i_g for i_g,g in enumerate(set(gdata))}
-    gdata = np.array([gain_remap[g] for g in gdata])
+    if Nshot_max is not None:
+        amp_remap = {a:i_a for i_a, a in enumerate(set(adata))}
+        adata = np.array([amp_remap[a] for a in adata])
+        gain_remap = {g:i_g for i_g,g in enumerate(set(gdata))}
+        gdata = np.array([gain_remap[g] for g in gdata])
 
     Nmeas = len( ydata)
     Namp = np.unique(adata).shape[0]
@@ -52,7 +58,7 @@ def gen_data(noise_lvl=0):
             "PA": PAdata, "PB": PBdata}
 
 
-def guess_data(data, perturbate=True):
+def guess_data(data, perturbate=True, set_model4=False, set_model5=False, perturbate_factor=.1):
 
     np.random.seed(hash("no problem is insoluble in all conceivable circumstances")&((1<<32)-1) )
 
@@ -76,9 +82,20 @@ def guess_data(data, perturbate=True):
     Gvals = np.array(UGvals)[:, 1]
 
     if perturbate:
-        AmpA_guess = np.exp( np.random.uniform( np.log(Avals)-1, np.log(Avals)+1, Namp) )
-        AmpB_guess = np.exp( np.random.uniform( np.log(Bvals)-1, np.log(Bvals)+1, Namp) )
+        _p = perturbate_factor
+        AmpA_guess = np.exp( np.random.uniform( np.log(Avals)-_p, np.log(Avals)+_p, Namp) )
+        AmpB_guess = np.exp( np.random.uniform( np.log(Bvals)-_p, np.log(Bvals)+_p, Namp) )
         Gain_guess = np.random.uniform(data['G'].min(), data["G"].max(), Ngain)  # going in blind here on the gain
+    elif set_model4:
+        prm = np.load("_temp_4.npz")
+        AmpA_guess = prm["AmpA_final"]
+        AmpB_guess = prm["AmpB_final"]
+        Gain_guess = prm["Gain_final"]
+    elif set_model5:
+        prm = np.load("_temp_5.npz")
+        AmpA_guess = prm["AmpA_final"]
+        AmpB_guess = prm["AmpB_final"]
+        Gain_guess = prm["Gain_final"]
     else:
         AmpA_guess = Avals
         AmpB_guess = Bvals
@@ -88,7 +105,6 @@ def guess_data(data, perturbate=True):
     IA = AmpA_guess[data["Aidx"]]
     IB = AmpB_guess[data["Aidx"]]
 
-    #return {"IA": AmpA_guess, "IB": AmpB_guess, "G": Gain_guess, }
     return {"IA":IA, "IB":IB, "G":G, "Gprm": Gain_guess, "IAprm": AmpA_guess,
             "IBprm": AmpB_guess}
 

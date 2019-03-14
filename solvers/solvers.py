@@ -2,19 +2,18 @@ import gen_data
 from IPython import embed
 from scitbx import lbfgs
 import cxid9114
+from itertools import izip
+from scipy.sparse import coo_matrix
+from scipy.sparse.linalg import lsmr
 from libtbx.test_utils import approx_equal
 
-data = gen_data.gen_data()
-
-guesses = gen_data.guess_data(data, perturbate=True)
-truth = gen_data.guess_data(data, perturbate=False)
 
 
 import time
 from scitbx.array_family import flex
 import numpy as np
 class LBFGSsolver(object):
-    def __init__(self, data, guess, truth):
+    def __init__(self, data, guess, truth, lbfgs=True):
         self.Gprm_truth = flex.double(np.ascontiguousarray(truth["Gprm"]))
         self.IAprm_truth = flex.double(np.ascontiguousarray(truth["IAprm"]))
         self.IBprm_truth = flex.double(np.ascontiguousarray(truth["IBprm"]))
@@ -31,14 +30,17 @@ class LBFGSsolver(object):
         self.Ns = len(self.Gprm_truth)
         self.Nmeas = len(self.Yobs)
 
-
-        self.x = flex.double(np.ascontiguousarray(guess["IAprm"])).concatenate(
-            flex.double(np.ascontiguousarray(guess["IBprm"]))).concatenate( flex.double(np.ascontiguousarray(guess["Gprm"])))
-        assert( len(self.x) == self.Nhkl*2 + self.Ns)
-        self.n = len(self.x)
-
         self.Aidx = flex.size_t(np.ascontiguousarray(data["Aidx"]))
         self.Gidx = flex.size_t(np.ascontiguousarray(data["Gidx"]))
+
+        self.guess = guess
+
+        if lbfgs:
+            self.x = flex.double(np.ascontiguousarray(guess["IAprm"])).concatenate(
+                flex.double(np.ascontiguousarray(guess["IBprm"]))).concatenate( flex.double(np.ascontiguousarray(guess["Gprm"])))
+            assert( len(self.x) == self.Nhkl*2 + self.Ns)
+            self.n = len(self.x)
+
 
 
     def unpack(self):
@@ -75,7 +77,8 @@ class LBFGSsolver(object):
 
     def compute_functional_and_gradients(self):
         f = self.functional()
-        print f
+        print f, "YEE"
+        self.stored_functional.append(f)
         return f, self.gradients()
 
     def minimize(self):
@@ -198,15 +201,115 @@ class LogIsolverCurve(lbfgs_with_curvatures_mix_in, LBFGSsolver):
 
         return grad_vec1
 
-Solver1 = LBFGSsolver(data=data, guess=truth, truth=truth)
-Solver2 = LBFGSsolver(data=data, guess=guesses, truth=truth)
 
-prm = np.load("_temp_3.npz")
-guesses["Gprm"] = prm["Gain_final"]
-guesses["IAprm"] = prm["AmpA_final"]
-guesses["IBprm"] = prm["AmpB_final"]
-LogSolve = LogIsolver(data=data, guess=guesses, truth=truth)
-LogSolveCurve = LogIsolverCurve(use_curvatures=False, data=data, guess=guesses, truth=truth)
 
-embed()
-#LogSolveCurve.run()
+class LSMRsolver:
+    def __init__(self, data, guess):
+
+        self.Yobs = data["Yobs"]
+        self.Gidx = data["Gidx"]
+        self.Aidx = data["Aidx"]
+        self.LAvals = data["LA"]
+        self.LBvals = data["LB"]
+        self.PAvals = data["PA"]
+        self.PBvals = data["PB"]
+
+        self.Nhkl = np.unique( self.Aidx).shape[0]
+        self.Ngain = np.unique( self.Gidx).shape[0]
+
+        self.x = np.hstack( (guess["IAprm"], guess["IBprm"], guess["Gprm"])  )
+        self.x[:2*self.Nhkl] = np.log(self.x[:2*self.Nhkl])
+
+        self.Nmeas = len(self.Yobs)
+        self.Nprm = len(self.x)
+        self.Beta = np.zeros(self.Nmeas)
+        self.niters = 0
+        self.residuals = []
+
+    def iterate(self, **kwargs):
+        BIG_row = []
+        BIG_col =  []
+        BIG_data = []
+        for i_meas, (yobs, i_g, i_hkl, LA, LB, PA, PB) in enumerate(
+                izip(self.Yobs, self.Gidx, self.Aidx, self.LAvals, self.LBvals, self.PAvals, self.PBvals)):
+
+            # get the parameters from the pre-structured parameters array
+            # which in this case is [AmplitudesA --- AmplitudesB --- Gains]
+            IA_guess = self.x[i_hkl]
+            IB_guess = self.x[self.Nhkl + i_hkl]
+            G_guess = self.x[2*self.Nhkl + i_g]
+
+            # residual between data and guess
+            self.Beta[i_meas] = yobs - (np.exp(IA_guess)*LA*PA + np.exp(IB_guess)*LB*PB) * G_guess
+
+            # partial derivitives
+            dA = G_guess * np.exp(IA_guess) * LA*PA
+            dB = G_guess * np.exp( IB_guess) * LB*PB
+            dG = np.exp(IA_guess)*LA*PA + np.exp(IB_guess)*LB*PB
+
+            # store the data in coordinate format for making sparse array
+            BIG_col.extend([i_hkl, self.Nhkl + i_hkl, 2*self.Nhkl + i_g])
+            BIG_row.extend([i_meas] * 3)
+            BIG_data.extend([dA, dB, dG])
+
+        # make the big sparse array
+        BS = coo_matrix((BIG_data, (BIG_row, BIG_col)),
+                        shape=(self.Nmeas, self.Nprm))
+        BS = BS.tocsr()  # convert to csr for speed gains?
+
+        # continue with Wolfram notation
+        # http://mathworld.wolfram.com/NonlinearLeastSquaresFitting.html
+        b = BS.T.dot(self.Beta)
+        A = BS.T.dot(BS)
+        a = lsmr(A,b, damp=np.random.uniform(.1,100)*0, **kwargs)[0]  # solve
+
+        self.niters += 1
+        self.x += a  # update
+        resid = np.dot(self.Beta, self.Beta)
+        self.residuals.append( resid)
+        self.BS = BS  # store for looking
+
+        print "Iter %d ; Residual: %e, Press Ctrl-C to break" % (self.niters, resid)
+
+
+# =============
+# Get a guess
+#lsmr_solver = LSMRsolver(data, guesses)
+#embed()
+
+# ================
+
+#Solver1 = LBFGSsolver(data=data, guess=truth, truth=truth)
+#Solver2 = LBFGSsolver(data=data, guess=guesses, truth=truth)
+
+#prm = np.load("lsmr_solver_x.npy")
+#prm[:2*lsmr_solver.Nhkl] = np.exp(prm[:2*lsmr_solver.Nhkl])
+#guesses["Gprm"] = prm[2*lsmr_solver.Nhkl:]
+# ..
+
+if __name__=="__main__":
+    data = gen_data.gen_data(Nshot_max=500)
+    guesses = gen_data.guess_data(data, perturbate=True)
+    truth = gen_data.guess_data(data, perturbate=False)
+    #prm = np.load("_temp_4.npz")
+    #guesses["IAprm"] = prm["AmpA_final"]
+    #guesses["IBprm"] = prm["AmpB_final"]
+    #guesses["Gprm"] = prm["Gain_final"]
+
+    #LogSolve = LogIsolver(data=data, guess=guesses, truth=truth)
+
+    LogSolveCurve = LogIsolverCurve(use_curvatures=False, data=data, guess=guesses, truth=truth)
+
+    embed()
+
+    #prm = np.load("_temp_4.npz")
+    prm = LogSolveCurve.x.as_numpy_array()
+    Nh = LogSolveCurve.Nhkl
+    guesses["IAprm"] = np.exp(prm[:Nh])
+    guesses["IBprm"] = np.exp(prm[Nh:2*Nh])
+    guesses["Gprm"] = prm[2*Nh:]
+
+    LogSolveCurve = LogIsolverCurve(use_curvatures=True, data=data, guess=guesses, truth=truth)
+
+
+    #LogSolveCurve.run()

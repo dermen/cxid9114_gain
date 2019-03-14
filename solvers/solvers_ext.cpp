@@ -1,16 +1,21 @@
 #include <cctbx/boost_python/flex_fwd.h>
 
+#include <cmath>
 #include <boost/python/module.hpp>
 #include <boost/python/class.hpp>
 #include <boost/python/def.hpp>
 #include <boost/python/dict.hpp>
 #include <boost/python/list.hpp>
+#include <boost/python/return_internal_reference.hpp>
+
 #include <scitbx/array_family/flex_types.h>
 #include <scitbx/array_family/shared.h>
-#include <cmath>
 #include <scitbx/array_family/boost_python/shared_wrapper.h>
+#include <scitbx/examples/bevington/prototype_core.h>
+
 #include <Eigen/Sparse>
-#include <boost/python/return_internal_reference.hpp>
+
+//#include <scitbx/math/mean_and_variance.h>
 
 using namespace boost::python;
 namespace cxid9114{
@@ -23,6 +28,8 @@ void hello( int n){
 typedef scitbx::af::shared<double> vecd;
 typedef scitbx::af::shared<size_t> veci;
 
+
+// LBFGS tools:
 vecd grad_vecs_cpp( vecd resid,
                     vecd Gcurr,
                     vecd IAcurr,
@@ -173,8 +180,6 @@ vecd curvatures_old( vecd resid,
     return curva;
     }
 
-
-
 vecd curvatures2( vecd resid,
                     vecd Gcurr,
                     vecd IAcurr,
@@ -227,17 +232,130 @@ vecd curvatures2( vecd resid,
 
     return curva;
     }
+/*
+~~~~~~~~~~~~~~~
+END LBFGS tool
+~~~~~~~~~~~~~~~
+*/
 
 
+// Sparse lev-mar tools
 
-namespace boost_python { namespace {
+class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
+  public:
+    log_sparse_jac_base(int n_parameters):
+      non_linear_ls_eigen_wrapper(n_parameters){}
 
-  void
-  solvers_init_module() {
+    void set_cpp_data(vecd y_obs_, vecd w_obs_,
+                    //vecd Gcurr_,
+                    //vecd IAcurr_,
+                    //vecd IBcurr_,
+                    veci Aidx_,
+                    veci Gidx_,
+                    vecd PA_,
+                    vecd PB_,
+                    vecd LA_,
+                    vecd LB_, std::size_t Nhkl_,
+                    std::size_t Ns_){
+        y_obs=y_obs_;
+        w_obs=w_obs_;
+        Aidx=Aidx_;Gidx=Gidx_;
+        //IAcurr = IAcurr_;
+        //IBcurr = IBcurr_;
+        //Gcurr = Gcurr_;
+        LA=LA_;LB=LB_;PA=PA_;PB=PB_;
+        Nhkl=Nhkl_;Ns=Ns_;
+        }
+
+    vecd fvec_callable(vecd current_values) {
+          vecd y_diff = vecd(y_obs.size());
+          for (int i = 0; i < y_obs.size(); ++i){
+
+            std::size_t i_hkl = Aidx[i];
+            std::size_t i_s = Gidx[i];
+
+            double IAval = std::exp(current_values[i_hkl]);
+            double IBval = std::exp(current_values[Nhkl +i_hkl]);
+            double Gval = current_values[2*Nhkl + i_s];
+
+            double y_calc = Gval * (IAval * LA[i]*PA[i]
+                                        + IBval*LB[i]*PB[i]);
+            y_diff[i] = y_obs[i] - y_calc;
+          }
+          return y_diff;
+        }
+
+    void access_cpp_build_up_directly_eigen_eqn(
+                            bool objective_only,
+                            scitbx::af::shared<double> current_values) {
+
+        vecd residuals = fvec_callable(current_values);
+        if (objective_only){
+          add_residuals(residuals.const_ref(), w_obs.const_ref());
+          return;
+        }
+
+        // add one of the normal equations per each observation
+        for (int ix = 0; ix < y_obs.size(); ++ix) {
+
+          scitbx::af::shared<std::size_t> jacobian_one_row_indices;
+          scitbx::af::shared<double> jacobian_one_row_data;
+
+          std::size_t i_hkl = Aidx[ix];
+          std::size_t i_s = Gidx[ix];
+
+          double IAval = std::exp(current_values[i_hkl]);
+          double IBval = std::exp(current_values[Nhkl +i_hkl]);
+          double Gval = current_values[2*Nhkl + i_s];
+
+          // first derivitive of "yobs - ycalc" w.r.t. IA
+          double dIA = Gval * IAval * LA[ix] * PA[ix];
+          jacobian_one_row_indices.push_back( i_hkl );
+          jacobian_one_row_data.push_back(dIA);
+
+          // derivitive w.r.t. IB
+          double dIB = Gval * IBval * LB[ix] * PB[ix];
+          jacobian_one_row_indices.push_back( Nhkl+i_hkl );
+          jacobian_one_row_data.push_back(dIB);
+
+          // derivitive w.r.t. G
+          double dG = IAval * LA[ix] * PA[ix]
+                + IBval * LB[ix] * PB[ix];
+          jacobian_one_row_indices.push_back(2*Nhkl + i_s);
+          jacobian_one_row_data.push_back(dG);
+
+          //add_equation(residuals[ix], jacobian_one_row.const_ref(), weights[ix]);
+          add_residual(-residuals[ix], 1.0);
+          add_equation_eigen(residuals[ix], jacobian_one_row_indices.const_ref(), jacobian_one_row_data.const_ref(), 1.);
+          }
+        }
+
+    double functional(vecd current_values) {
+      double result = 0;
+      vecd fvec = fvec_callable(current_values);
+      for (int i = 0; i < fvec.size(); ++i) {
+        result += fvec[i]*fvec[i]*w_obs[i];
+      }
+      return result;
+    }
+
+    vecd y_obs,w_obs,PA,PB,LA,LB;
+    veci Aidx,Gidx;
+    std::size_t Nhkl, n, Ns;
+
+  };
+// END Sparse lev-mar tools
+
+
+namespace boost_python {
+  namespace {
+
+  void solvers_init_module() {
     using namespace boost::python;
 
     typedef return_value_policy<return_by_value> rbv;
     typedef default_call_policies dcp;
+
     def ("hello", &hello, ( arg("n") ) );
 
     def ("grad_vecs_cpp", &grad_vecs_cpp, (
@@ -250,7 +368,7 @@ namespace boost_python { namespace {
         arg("PA") ,
         arg("PB") ,
         arg("LA") ,
-        arg("LB"), ("Nhkl"), ("n")
+        arg("LB"), arg("Nhkl"), arg("n")
         ) );
 
     def ("grad_vecs_cpp2", &grad_vecs_cpp2, (
@@ -263,7 +381,7 @@ namespace boost_python { namespace {
         arg("PA") ,
         arg("PB") ,
         arg("LA") ,
-        arg("LB"), ("Nhkl"), ("n")
+        arg("LB"), arg("Nhkl"), arg("n")
         ) );
 
     def ("curvatures2", &curvatures2, (
@@ -276,13 +394,41 @@ namespace boost_python { namespace {
         arg("PA") ,
         arg("PB") ,
         arg("LA") ,
-        arg("LB"), ("Nhkl"), ("n")
-        ) );
+        arg("LB"), arg("Nhkl"), arg("n")
+            )
+          );
 
+    typedef scitbx::example::non_linear_ls_eigen_wrapper nllsew ;
+
+    typedef log_sparse_jac_base lsjb ;
+    class_<lsjb,bases<nllsew> >( "log_sparse_jac_base", no_init)
+
+      .def( init<int>(arg("n_parameters")))
+      .def(
+        "access_cpp_build_up_directly_eigen_eqn",
+        &lsjb::access_cpp_build_up_directly_eigen_eqn,
+        (arg("objective_only"),arg("current_values")))
+      .def(
+        "fvec_callable",
+        &lsjb::fvec_callable,
+        (arg("current_values")) )
+
+      .def(
+        "functional",
+        &lsjb::functional,
+        (arg("current_values")) )
+
+      .def(
+        "set_cpp_data",
+        &lsjb::set_cpp_data,
+        (arg("y_obs_"), arg("w_obs"), arg("Aidx_"), arg("Gidx_"), arg("PA_"),
+         arg("PB_"), arg("LA_"), arg("LB_"), arg("Nhkl_"),
+         arg("Ns_")) )
+      ;
   }
 
-}
-}}} // namespace xfel::boost_python::<anonymous>
+}}}
+}// namespace xfel::boost_python::<anonymous>
 
 BOOST_PYTHON_MODULE(cxid9114_solvers_ext)
 {
