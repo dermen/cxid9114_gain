@@ -8,7 +8,7 @@ from scipy.sparse import coo_matrix
 from libtbx.test_utils import approx_equal
 from IPython import embed
 data = gen_data.gen_data()
-guesses = gen_data.guess_data(data, perturbate=True, set_model4=False, set_model5=False)
+guesses = gen_data.guess_data(data, perturbate=True, set_model4=False, set_model5=False, perturbate_factor=1)
 truth = gen_data.guess_data(data, perturbate=False)
 print("Loaded")
 import time
@@ -26,18 +26,23 @@ import time
 ## iterate for 5 minutes then save the model.. that would be model 5
 #
 # # Note curvatures work with model 4 or with perturbate_factor=0.1, i.e. close to minimum
-t1_lb = time.time()
-lbfgs_solver = solvers.LogIsolverCurve(
-    use_curvatures=True,
-    data=data,
-    guess=guesses, truth=truth)
-t2_lb = time.time()
 
-embed()
+
+
+#t1_lb = time.time()
+#lbfgs_solver = solvers.LogIsolverCurve(
+#    use_curvatures=True,
+#    data=data,
+#    guess=guesses, truth=truth)
+#t2_lb = time.time()
+#embed()
 
 from scitbx.array_family import flex
 from scitbx.lstbx import normal_eqns
 from scitbx.examples.bevington.silver import levenberg_common
+
+
+from libtbx.development.timers import Profiler
 
 class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non_linear_ls_mixin):
   def __init__(self, initial_estimates):
@@ -47,6 +52,7 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
 
 
   def build_up(self, objective_only=False):
+    #_P = Profiler("building up")
     if not objective_only:
       self.counter+=1
 
@@ -59,9 +65,6 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
       #self.print_step("LM sparse",functional = functional)
     self.access_cpp_build_up_directly_eigen_eqn(objective_only, current_values = self.x)
 
-  #def functional(self):
-  #  resid = self.fvec_callable(self.x)
-  #  return flex.sum(resid*resid)
 
 from scitbx.lstbx import normal_eqns_solving
 class eigen_solver(solvers.LBFGSsolver):
@@ -100,10 +103,10 @@ class eigen_solver(solvers.LBFGSsolver):
     self.helper.restart()
     #print self.helper.get_eigen_summary()
     iterations = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
-               non_linear_ls = self.helper,
-               n_max_iterations = 5000,
+               non_linear_ls=self.helper,
+               n_max_iterations=5000,
                track_all=True,
-               step_threshold = 0.0001)
+               step_threshold=0.0001)
     print "End of minimization: Converged", self.helper.counter,"cycles"
     print self.helper.get_eigen_summary()
 

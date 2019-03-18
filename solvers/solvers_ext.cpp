@@ -14,6 +14,14 @@
 #include <scitbx/examples/bevington/prototype_core.h>
 
 #include <Eigen/Sparse>
+#include <Eigen/SparseQR>
+#include <Eigen/SparseLU>
+#include <Eigen/OrderingMethods>
+#include <Eigen/IterativeLinearSolvers>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 //#include <scitbx/math/mean_and_variance.h>
 
@@ -234,7 +242,15 @@ vecd curvatures2( vecd resid,
     }
 /*
 ~~~~~~~~~~~~~~~
-END LBFGS tool
+~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
+               END LBFGS tool
+~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
 ~~~~~~~~~~~~~~~
 */
 
@@ -245,6 +261,8 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
   public:
     log_sparse_jac_base(int n_parameters):
       non_linear_ls_eigen_wrapper(n_parameters){}
+    // SET A SOLVE METHOD TO OVERRIDE THE CURRENT ONE
+
 
     void set_cpp_data(vecd y_obs_, vecd w_obs_,
                     //vecd Gcurr_,
@@ -265,6 +283,12 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
         //Gcurr = Gcurr_;
         LA=LA_;LB=LB_;PA=PA_;PB=PB_;
         Nhkl=Nhkl_;Ns=Ns_;
+
+        // initialize the jacobian sparse arrays
+        //for (int i=0; i < 3*y_obs.size(); i++){ // 3 parameters sampled  per measurement in this case..
+        //  jacobian_one_row_indices.push_back(0);
+        //  jacobian_one_row_data.push_back(0);
+        //  }
         }
 
     vecd fvec_callable(vecd current_values) {
@@ -295,11 +319,14 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           return;
         }
 
+        veci jacobian_one_row_indices(3);
+        vecd jacobian_one_row_data(3);
+
+        size_t* jacobian_one_row_indices_pt = &jacobian_one_row_indices[0];
+        double* jacobian_one_row_data_pt = &jacobian_one_row_data[0];
+
         // add one of the normal equations per each observation
         for (int ix = 0; ix < y_obs.size(); ++ix) {
-
-          scitbx::af::shared<std::size_t> jacobian_one_row_indices;
-          scitbx::af::shared<double> jacobian_one_row_data;
 
           std::size_t i_hkl = Aidx[ix];
           std::size_t i_s = Gidx[ix];
@@ -308,21 +335,30 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           double IBval = std::exp(current_values[Nhkl +i_hkl]);
           double Gval = current_values[2*Nhkl + i_s];
 
+          double Aterm = IAval*LA[ix]*PA[ix];
+          double Bterm = IBval * LB[ix]*PB[ix];
+
           // first derivitive of "yobs - ycalc" w.r.t. IA
-          double dIA = Gval * IAval * LA[ix] * PA[ix];
-          jacobian_one_row_indices.push_back( i_hkl );
-          jacobian_one_row_data.push_back(dIA);
+          double dIA = Gval * Aterm; //IAval * LA[ix] * PA[ix];
+          //jacobian_one_row_indices.push_back( i_hkl );
+          //jacobian_one_row_data.push_back(dIA);
+          jacobian_one_row_indices_pt[0]= i_hkl;
+          jacobian_one_row_data_pt[0] = dIA;
 
           // derivitive w.r.t. IB
-          double dIB = Gval * IBval * LB[ix] * PB[ix];
-          jacobian_one_row_indices.push_back( Nhkl+i_hkl );
-          jacobian_one_row_data.push_back(dIB);
+          double dIB = Gval * Bterm;// IBval *LB[ix] * PB[ix];
+          //jacobian_one_row_indices.push_back( Nhkl+i_hkl );
+          //jacobian_one_row_data.push_back(dIB);
+          jacobian_one_row_indices_pt[1]= Nhkl + i_hkl;
+          jacobian_one_row_data_pt[1] = dIB;
 
           // derivitive w.r.t. G
-          double dG = IAval * LA[ix] * PA[ix]
-                + IBval * LB[ix] * PB[ix];
-          jacobian_one_row_indices.push_back(2*Nhkl + i_s);
-          jacobian_one_row_data.push_back(dG);
+          double dG = Aterm + Bterm; //IAval * LA[ix] * PA[ix]
+                //+ IBval * LB[ix] * PB[ix];
+          //jacobian_one_row_indices.push_back(2*Nhkl + i_s);
+          //jacobian_one_row_data.push_back(dG);
+          jacobian_one_row_indices_pt[2]= 2*Nhkl + i_s;
+          jacobian_one_row_data_pt[2] = dG;
 
           //add_equation(residuals[ix], jacobian_one_row.const_ref(), weights[ix]);
           add_residual(-residuals[ix], 1.0);
@@ -343,6 +379,8 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
     veci Aidx,Gidx;
     std::size_t Nhkl, n, Ns;
 
+    //veci jacobian_one_row_indices(3);
+    //vecd jacobian_one_row_data(3);
   };
 // END Sparse lev-mar tools
 
@@ -417,6 +455,8 @@ namespace boost_python {
         "functional",
         &lsjb::functional,
         (arg("current_values")) )
+
+      //.def("solve", &lsjb::solve) // no arguments
 
       .def(
         "set_cpp_data",
