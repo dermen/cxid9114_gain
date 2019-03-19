@@ -3,6 +3,46 @@ import numpy as np
 from dxtbx.model import Detector
 from dials.array_family import flex
 
+def twocolor_deltapix(panel, beamA, beamB):
+    """get max number of pixels spanned by two color spots on panel"""
+    waveA = beamA.get_wavelength() 
+    waveB = beamB.get_wavelength()
+    pixsize = panel.get_pixel_size()[0]
+    Qpan = res_on_panel(panel, beamA)
+    Qmag = np.linalg.norm(Qpan, axis=2) * 2 * np.pi
+    qmax = Qmag.max()
+    detdist = panel.get_distance()
+    RA = detdist * np.tan(2*np.arcsin(qmax*waveA/4/np.pi)) / pixsize
+    RB = detdist * np.tan(2*np.arcsin(qmax*waveB/4/np.pi)) / pixsize
+    return np.abs( RA - RB)
+
+def res_on_panel(panel, beam):
+    """returns q for each pixel on image"""
+    orig = np.array(panel.get_origin())
+    fs = np.array(panel.get_fast_axis())
+    ss = np.array(panel.get_slow_axis())
+    fs_pixsize, ss_pixsize = panel.get_pixel_size()
+    
+    Nfs, Nss = panel.get_image_size()
+    #resmap = np.zeros( (Nss, Nfs,3))
+    
+    SS,FS = np.indices((Nss,Nfs))
+    
+    S1 = orig[:,None,None] + FS*fs[:,None,None]*fs_pixsize + SS*ss[:,None,None]*ss_pixsize
+    S1 = S1 / np.linalg.norm(S1,axis=0)[None,:,:] / beam.get_wavelength()
+
+    Q = S1 - np.array(beam.get_s0())[:,None,None]
+    return np.moveaxis(Q, [0,1,2], [2,0,1])
+
+    #for i_fs in range( Nfs):
+    #    for i_ss in range(Nss):
+    #        s1 = orig + i_fs*fs*fs_pixsize + i_ss*ss*ss_pixsize  # scattering vector
+    #        s1 = s1 / np.linalg.norm(s1) / beam.get_wavelength()
+    #        
+    #        resmap[ i_ss, i_fs] = s1-beam.get_s0()
+
+    #return resmap
+
 
 def make_dials_cspad(psf):
     """
