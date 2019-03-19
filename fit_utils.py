@@ -3,39 +3,42 @@ import lmfit
 import numpy as np
 import pylab as plt
 
+
 LOW_GAIN_GAUSS_PARAMS = lmfit.Parameters()
 LOW_GAIN_GAUSS_PARAMS.add('wid0', value= 2.2, min=1)
 LOW_GAIN_GAUSS_PARAMS.add('amp0', value= 0.25 , min=0)
 LOW_GAIN_GAUSS_PARAMS.add('mu0', value= 0, min=-0.00001, max=0.00001)
-LOW_GAIN_GAUSS_PARAMS.add('wid1', value= 3.,min=0)
+LOW_GAIN_GAUSS_PARAMS.add('wid1', value= 3.,min=0.5, max=np.sqrt(4))
 LOW_GAIN_GAUSS_PARAMS.add('amp1', value=0.01 , min=0)
 LOW_GAIN_GAUSS_PARAMS.add('mu1', value= 4.2 , min=1) # max=5 )
 #LOW_GAIN_GAUSS_PARAMS.add('alpha1', value=-2.2, max=0.2, min=-8)
+#LOW_GAIN_GAUSS_PARAMS.add('off0', value= 0, min=0, max=.03) #max=32)
+#LOW_GAIN_GAUSS_PARAMS.add('off1', value= 0, min=0, max=.03) #max=32)
 
 HIGH_GAIN_GAUSS_PARAMS = lmfit.Parameters()
 HIGH_GAIN_GAUSS_PARAMS.add('wid0', value= 3.,)
 HIGH_GAIN_GAUSS_PARAMS.add('amp0', value= 0.1 , min=0)
 HIGH_GAIN_GAUSS_PARAMS.add('mu0', value= 0 ,min=-0.0001, max=0.0001 )
-HIGH_GAIN_GAUSS_PARAMS.add('off0', value= 0,) #max=32)
-# HIGH_GAIN_GAUSS_PARAMS.add('alpha0', value=2 ,  )
-HIGH_GAIN_GAUSS_PARAMS.add('wid1', value= 1.5, min=1, max=9) #max=2)
+#HIGH_GAIN_GAUSS_PARAMS.add('off0', value= 0, min=0, max=.03) #max=32)
+#HIGH_GAIN_GAUSS_PARAMS.add('alpha0', value=2,)
+HIGH_GAIN_GAUSS_PARAMS.add('wid1', value= 1.5, min=0, max=np.sqrt(28)) #, max=9) #max=2)
 HIGH_GAIN_GAUSS_PARAMS.add('amp1', value= 0.005 , min=0)
-HIGH_GAIN_GAUSS_PARAMS.add('mu1', value= 28, min=20) #max=32)
-HIGH_GAIN_GAUSS_PARAMS.add('off1', value= 0,) #max=32)
-HIGH_GAIN_GAUSS_PARAMS.add('alpha1', value=-2)
+HIGH_GAIN_GAUSS_PARAMS.add('mu1', value= 28, min=10, max=36) #max=32)
+#HIGH_GAIN_GAUSS_PARAMS.add('off1', value= 0, min=0, max=.03) #max=32)
+#HIGH_GAIN_GAUSS_PARAMS.add('alpha1', value=-2)
 
-def Gauss(x,amp,mu,wid, off=0):
+def Gauss(x,amp,mu,wid):
     """returns a Gaussian"""
-    return off+amp*np.exp( \
+    return amp*np.exp( \
         -((x - mu)/wid)**2)
 
 def Cumu(x, mu,alpha):
     """returns a cummulative distribution"""
     return 0.5*( 1 + erf( (alpha*(x-mu))  /np.sqrt(2)) )
 
-def skew_gauss(x,amp,mu,wid,alpha, off=0):
+def skew_gauss(x,amp,mu,wid,alpha, off):
     """returns a skewed normal dist"""
-    return Gauss(x, amp, mu,wid, off)*Cumu(x,mu,alpha)*2
+    return off + Gauss(x, amp, mu,wid)* 1 #Cumu(x,mu,alpha)*2
 
 def gauss_standard(params, xdata, ydata):
     """
@@ -47,6 +50,7 @@ def gauss_standard(params, xdata, ydata):
     gauss_model = Gauss( xdata, amp, mu, wid)
     return gauss_model-ydata
 
+#@profile
 def gauss_and_skewgauss( params, xdata, ydata):
     """ residual function for fitting sum of two skewed Gaussians"""
     #   fit the 0-photon peak Gaussian
@@ -57,7 +61,11 @@ def gauss_and_skewgauss( params, xdata, ydata):
         alpha0 = params['alpha0'].value
     else:
         alpha0 = 0
-    gauss_model0 = skew_gauss( xdata, amp0, mu0, wid0, alpha=alpha0)
+    if 'off0' in params.keys():
+        off0 = params['off0'].value
+    else:
+        off0 =0
+    gauss_model0 = skew_gauss( xdata, amp0, mu0, wid0, alpha=alpha0, off=off0)
 
     amp1 = params['amp1'].value
     wid1 = params['wid1' ].value
@@ -66,11 +74,16 @@ def gauss_and_skewgauss( params, xdata, ydata):
         alpha1 = params['alpha1'].value
     else:
         alpha1 = 0
-    gauss_model1 = skew_gauss( xdata, amp1, mu1, wid1, alpha=alpha1)
+    if 'off1' in params.keys():
+        off1 = params['off1'].value
+    else:
+        off1 =0
+    gauss_model1 = skew_gauss( xdata, amp1, mu1, wid1, alpha=alpha1, off=off1)
 
     return gauss_model0 + gauss_model1 - ydata
 
 
+#@profile
 def fit_low_gain_dist(xdata, ydata, plot=False):
     result = lmfit.minimize(gauss_and_skewgauss, LOW_GAIN_GAUSS_PARAMS,
                             args=(xdata, ydata ))
@@ -83,6 +96,11 @@ def fit_low_gain_dist(xdata, ydata, plot=False):
         alpha0 = rp['alpha0'].value
     else:
         alpha0 = 0
+    
+    if 'off0' in rp.keys():
+        off0 = rp['off0'].value
+    else:
+        off0 =0
     amp1 = rp['amp1'].value
     mu1 = rp['mu1'].value
     wid1 = rp['wid1'].value
@@ -90,9 +108,14 @@ def fit_low_gain_dist(xdata, ydata, plot=False):
         alpha1 = rp['alpha1'].value
     else:
         alpha1 = 0
+    
+    if 'off1' in rp.keys():
+        off1 = rp['off1'].value
+    else:
+        off1 =0
 
-    gauss0 = skew_gauss(xdata, amp0,mu0,wid0,alpha0)
-    gauss1 = skew_gauss(xdata, amp1,mu1,wid1,alpha1)
+    gauss0 = skew_gauss(xdata, amp0,mu0,wid0,alpha0,off0)
+    gauss1 = skew_gauss(xdata, amp1,mu1,wid1,alpha1, off1)
 
     if plot:
         plt.figure()
@@ -112,6 +135,7 @@ def fit_low_gain_dist(xdata, ydata, plot=False):
 
     return gauss0,gauss1, result
 
+#@profile
 def fit_high_gain_dist(xdata, ydata, plot=False):
 
     result = lmfit.minimize(gauss_and_skewgauss, HIGH_GAIN_GAUSS_PARAMS,

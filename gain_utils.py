@@ -18,10 +18,10 @@ def get_gain_dists(panel_data, gain_data, mask_data=None, plot=False, norm=False
 
     #   intensity bins for LD91 (specific)
     if bins_low is None:
-        bins_low = np.linspace(-10,20, 600) # in ADU
+        bins_low = np.linspace(-10,20, 300) # in ADU
     bc_low = .5*(bins_low[1:] + bins_low[:-1]) # bin centers
     if bins_high is None:
-        bins_high = np.linspace(-20,50, 400) # in ADUs
+        bins_high = np.linspace(-20,50, 200) # in ADUs
     bc_high = .5*(bins_high[1:] + bins_high[:-1]) # bin centers
 
     i1_low = np.argmin( np.abs(bc_low+10))

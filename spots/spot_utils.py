@@ -1,5 +1,4 @@
 
-
 import sys
 from collections import Counter
 from itertools import groupby
@@ -108,37 +107,6 @@ def refls_to_q(refls, detector, beam, update_table=False):
 
     return np.vstack(q_vecs)
 
-
-
-def fs_ss_to_q(fs, ss, pids, detector, beam):
-
-    orig_vecs = {}
-    fs_vecs = {}
-    ss_vecs = {}
-    u_pids = set(pids)
-
-    for pid in u_pids:
-        orig_vecs[pid] = np.array(detector[pid].get_origin())
-        fs_vecs[pid] = np.array(detector[pid].get_fast_axis())
-        ss_vecs[pid] = np.array(detector[pid].get_slow_axis())
-
-    s1_vecs = []
-    q_vecs = []
-    for i_fs, i_ss, pid in zip( fs,ss, pids):
-        panel = detector[pid]
-        orig = orig_vecs[pid] #panel.get_origin()
-        fs = fs_vecs[pid] #panel.get_fast_axis()
-        ss = ss_vecs[pid] #panel.get_slow_axis()
-
-        fs_pixsize, ss_pixsize = panel.get_pixel_size()
-        s1 = orig + i_fs*fs*fs_pixsize + i_ss*ss*ss_pixsize  # scattering vector
-        s1 = s1 / np.linalg.norm(s1) / beam.get_wavelength()
-        s1_vecs.append( s1)
-        q_vecs.append( s1-beam.get_s0())
-
-    return np.vstack(q_vecs)
-
-
 def refls_xyz_in_lab(refls, detector, xy_key="xyzobs.px.value"):
     all_refls_lab = []
     for i,r in enumerate(refls):
@@ -177,6 +145,21 @@ def fs_ss_to_q(fs, ss, pids, detector, beam):
         q_vecs.append( s1-beam.get_s0())
 
     return np.vstack(q_vecs)
+
+
+def npix_per_spot(refl_tbl):
+    """counts the number of pixels per reflection"""
+    Nrefl = len( refl_tbl)
+    
+    masks = [ refl_tbl[i]['shoebox'].mask.as_numpy_array()
+              for i in range(Nrefl)]
+    
+    code = MaskCode.Foreground.real
+
+    all_npix = np.zeros( Nrefl, int)
+    for i_ref, M in enumerate( masks):
+        all_npix[i_ref] = np.sum(M & code == code)
+    return all_npix 
 
 
 def strong_spot_mask(refl_tbl, img_size):

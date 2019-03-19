@@ -26,7 +26,8 @@ def get_scattF(wavelen_A, pdb_name, algo, dmin, ano_flag):
     """
 
     pdblines = open(pdb_name, "r").readlines()
-    pdb_in = iotbx.pdb.input(source_info=None, lines=pdblines)
+    from iotbx import pdb
+    pdb_in = pdb.input(source_info=None, lines=pdblines)
     xray_structure = pdb_in.xray_structure_simple()
     scatts = xray_structure.scatterers()
     for sc in scatts:
