@@ -196,8 +196,8 @@ UBvals = sorted( set(UBvals), key=lambda x: x[0])
 Avals = np.array(UAvals)[:,1]
 Bvals = np.array(UBvals)[:,1]
 
-AmpA_guess = np.random.uniform(Avals*.1, Avals*3, Namp)**2
-AmpB_guess = np.random.uniform(Bvals*.1, Bvals*3, Namp)**2
+AmpA_guess = np.random.uniform(Avals*.1, Avals*10, Namp)**2
+AmpB_guess = np.random.uniform(Bvals*.1, Bvals*10, Namp)**2
 #AmpA_guess = Avals**2
 #AmpB_guess = Bvals**2
 
@@ -206,10 +206,10 @@ AmpB_guess = np.random.uniform(Bvals*.1, Bvals*3, Namp)**2
 Gain_guess = np.random.uniform(gains.min(), gains.max(), Ngain)  # going in blind here on the gain
 
 
-prm_data = np.load("_temp.npz")
-AmpA_guess = prm_data["AmpA_final"]
-AmpB_guess = prm_data["AmpB_final"]
-Gain_guess = prm_data["Gain_final"]
+#prm_data = np.load("_temp.npz")
+#AmpA_guess = prm_data["AmpA_final"]
+#AmpB_guess = prm_data["AmpB_final"]
+#Gain_guess = prm_data["Gain_final"]
 
 
 # Parameters array, structured as amplitudes then gains:[AmplitudesA --- AmplitudesB --- Gains]
@@ -332,6 +332,8 @@ plt.plot(FAdat**2, AmpA_guess[adata],'s', ms=.5)
 plt.plot(FAdat**2, AmpA_final[adata],'o', ms=.5)
 plt.xlabel("actual value")
 plt.ylabel("best fit")
+plt.gca().set_yscale("log")
+plt.gca().set_xscale("log")
 plt.legend(("init guess", "final fit"), markerscale=10)
 
 
@@ -345,6 +347,8 @@ plt.plot(FBdat**2, AmpB_guess[adata],'s', ms=.5)
 plt.plot(FBdat**2, AmpB_final[adata],'o', ms=.5)
 plt.xlabel("data")
 plt.ylabel("fit")
+plt.gca().set_yscale("log")
+plt.gca().set_xscale("log")
 plt.legend(("init guess", "final fit"), markerscale=10)
 
 #
@@ -361,4 +365,6 @@ plt.legend(("init guess", "final fit"), markerscale=10)
 
 
 plt.show()
+
+embed()
 
