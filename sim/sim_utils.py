@@ -284,7 +284,7 @@ def simulate_xyscan_result(scan_data_file, prefix=None):
 class PatternFactory:
 
     def __init__(self, crystal=None, detector=None, beam=None,
-                 Ncells_abc=(10,10,10), Gauss=False, oversample=2, panel_id=0,
+                 Ncells_abc=(10,10,10), Gauss=False, oversample=0, panel_id=0,
                  recenter=True, verbose=10, profile=None ):
         """
         :param crystal:  dials crystal model
@@ -302,8 +302,8 @@ class PatternFactory:
             self.beam = utils.open_flex(beam_f)
 
         self.SIM2 = nanoBragg(self.detector, self.beam, verbose=verbose, panel_id=panel_id)
-        #self.SIM2.beamcenter_convention = convention.DIALS
-        self.SIM2.oversample = oversample  # oversamples the pixel ?
+        if oversample > 0:
+            self.SIM2.oversample = oversample
         self.SIM2.polarization = 1  # polarization fraction ?
         self.SIM2.F000 = 10  # should be number of electrons ?
         self.SIM2.default_F = 0
@@ -336,7 +336,7 @@ class PatternFactory:
         self.FULL_ROI = self.SIM2.region_of_interest
 
         if recenter:  # FIXME: I am not sure why this seems to be necessary to preserve geom
-            self.SIM2.beam_center_mm = detector[panel_id].get_beam_centre(beam.get_s0())
+            self.SIM2.beam_center_mm = self.detector[panel_id].get_beam_centre(self.beam.get_s0())
 
 
     def make_pattern_default(self, crystal, spectrum, show_spectrum=False,
@@ -429,7 +429,6 @@ class PatternFactory:
                            ret_sum=ret_sum)
         return pattern
 
-
     def primer(self, crystal, energy, flux, F=None):
         self.SIM2.wavelength_A = parameters.ENERGY_CONV / energy
         self.SIM2.flux = flux
@@ -454,7 +453,7 @@ class PatternFactory:
         return img
 
 
-def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=2,
+def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=0,
              Ncells_abc=(5,5,5), mos_dom=20, fcalc_f="fcalc_slim.pkl",
              mos_spread=0.15, fracA=0.5, fracB=0.5, tot_flux=1e14):
     """
@@ -508,20 +507,23 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=2,
 
 
 def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
-                   Gauss=False, oversample=2, Ncells_abc=(5,5,5),verbose=0,
-                   div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15, profile=None):
+                   Gauss=False, oversample=0, Ncells_abc=(5,5,5),verbose=0,
+                   div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15, profile=None,
+                   roi_pp=None, counts_pp=None):
     Npan = len(detector)
-    Nchan = len( energies)
+    Nchan = len(energies)
 
     # initialize output form
     panel_imgs = {}
-    for i_en in range( Nchan):
+    for i_en in range(Nchan):
         panel_imgs[i_en] = []
 
     if pids is None:
-        pids = range( Npan)
-    for i_pan in pids:
+        pids = range(Npan)
+
+    for ii, i_pan in enumerate(pids):
         PattF = PatternFactory(detector=detector,
+                               crystal=crystal,
                                beam=beam,
                                panel_id=i_pan,
                                recenter=True,
@@ -531,16 +533,25 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                                oversample=oversample, profile=profile)
 
         PattF.adjust_mosaicity(mos_dom, mos_spread)
-        PattF.adjust_dispersion( disp_pct)
-        PattF.adjust_divergence( div_tup)
+        PattF.adjust_dispersion(disp_pct)
+        PattF.adjust_divergence(div_tup)
         for i_en in range(Nchan):
             PattF.primer(crystal=crystal,
                          energy=energies[i_en],
                          F=fcalcs[i_en],
                          flux=fluxes[i_en])
 
-            color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True)
-            panel_imgs[i_en].append( color_img)
+            #from IPython import embed
+            #embed()
+            if roi_pp is None:
+                color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True)
+            else:
+                color_img = PattF.sim_rois(rois=roi_pp[ii], reset=True)
+                where_finite = counts_pp[ii] > 0
+                if np.any(where_finite):
+                    color_img[where_finite] /= counts_pp[ii][where_finite]
+
+            panel_imgs[i_en].append(color_img)
 
     return panel_imgs
 

@@ -3,7 +3,7 @@ import numpy as np
 from scitbx.matrix import sqr, col
 from cxid9114.spots import spot_utils
 from cxid9114.sim import sim_utils
-
+from copy import deepcopy
 
 class JitterFactory:
     def __init__(self, crystal, Patt, refls, data_image, szx=30, szy=30):
@@ -28,16 +28,20 @@ class JitterFactory:
         self.U = sqr(crystal.get_U())
         self.B = sqr(crystal.get_B())
         self.s0 = Patt.beam.get_s0()
+        self.ucell_abc = list(crystal.unit_cell().parameters())[:3]
+        self.crystal = crystal
+
         self.Patt = Patt
         self.data = data_image
         self.rois = spot_utils.get_spot_roi(refls, dxtbx_image_size=detector.get_image_size(), szx=szx, szy=szy)
-        self.spotX, self.spotY,_ = spot_utils.xyz_from_refl(refls)
+        self.spotX, self.spotY, _ = spot_utils.xyz_from_refl(refls)
         self.spot_mask = spot_utils.strong_spot_mask(refls, self.data.shape)
         self.counts = spot_utils.count_roi_overlap(self.rois, img_size=self.data.shape)
         if np.any( self.counts > 0):
             self.should_norm = True
         else:
             self.should_norm = False
+
 
     def jitter_Amat(self, anglesX=None, anglesY=None, anglesZ=None, deg=True, overlapper=None,
                 plot=False, plot_delay=0.05):
@@ -54,9 +58,6 @@ class JitterFactory:
         if overlapper is None:
             overlapper = lambda im1,im2: np.sum( im1*im2)
 
-        x = col((1,0,0))
-        y = col((0,1,0))
-        z = col((0,0,1))
 
         xR = x.axis_and_angle_as_r3_rotation_matrix
         yR = y.axis_and_angle_as_r3_rotation_matrix
@@ -111,6 +112,69 @@ class JitterFactory:
         # reset the A matrix
         self.Patt.Amatrix = self.A
         return {"A_seq": A_seq, "overlaps": np.array(overlaps), "Aopt": Aopt}
+
+    @staticmethod
+    def jitter_crystal(crystal, cell_jitter_fwhm=0.6, rot_jitter_width=1, seed=None):
+        """
+        :param cell_jitter_fwhm: Angstrom
+        :param rot_jitter_width: degrees
+        :param seed: random seed
+        :return:
+        """
+        np.random.seed(seed)
+        ucell_abc = list(crystal.get_unit_cell().parameters())[:3]
+        newcell_abc = np.random.normal(ucell_abc, cell_jitter_fwhm / 2.3458)
+        Xdeg, Ydeg, Zdeg = np.random.uniform(-rot_jitter_width/2., rot_jitter_width/2., 3)
+
+        x = col((1,0,0))
+        y = col((0,1,0))
+        z = col((0,0,1))
+
+        xR = x.axis_and_angle_as_r3_rotation_matrix
+        yR = y.axis_and_angle_as_r3_rotation_matrix
+        zR = z.axis_and_angle_as_r3_rotation_matrix
+
+        RotMatX = xR(Xdeg, deg=True)
+        RotMatY = yR(Ydeg, deg=True)
+        RotMatZ = zR(Zdeg, deg=True)
+
+        Rots = [RotMatX, RotMatY, RotMatZ]
+        np.random.shuffle(Rots)  # randomize the ordering for funzies
+
+        R1,R2,R3 = Rots
+
+        a,_,c = newcell_abc  # for lysozyme we want a=b
+        Bnew = sqr( (a,0,0, 0,a,0, 0,0,c)).inverse()
+        Unew = R1*R2*R3*sqr(crystal.get_U())
+
+        new_cryst = deepcopy(crystal)
+        new_cryst.set_B(Bnew)
+        new_cryst.set_U(Unew)
+
+        return new_cryst
+
+    @staticmethod
+    def jitter_shape(seed=None, min_Ncell=7, max_Ncell = 30,
+                     mos_fwhm=0.011729, mos_scale=0.006,
+                     min_Nmos_dom=1, max_Nmos_dom=20):
+        """
+
+        :param seed:  random seed
+        :param min_Ncell: minimum number of cells along an a-b-c axis
+        :param max_Ncell: maximum '' '' ''
+        :param mos_fwhm: sample the mosaicity width itself with a variance
+        :param mos_scale: scale factor to determine mosacicity spread, this is sampled by mos_fwhm
+        :param min_Nmos_dom: minimum number of mosaic domains
+        :param max_Nmos_dom: maximum number of mosaic domains
+        :return: dictionary of randomized shape parameters to pass to simtbx
+        """
+        np.random.seed(seed)
+        xtal_shape = np.random.choice(['gauss', 'tophat', 'round', 'square'])
+        Nmos_dom = np.random.randint(min_Nmos_dom, max_Nmos_dom)
+        Nmos_spread = np.random.normal(Nmos_dom * mos_scale, mos_fwhm/2.3458)
+        Ncell_abc = np.random.randint(min_Ncell, max_Ncell, 3)
+        return {'shape': xtal_shape, 'Nmos_dom': Nmos_dom,
+                'mos_spread': Nmos_spread, 'Ncells_abc': Ncell_abc}
 
 
 def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
@@ -167,7 +231,7 @@ def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
                                           panel_id=pid, recenter=True,
                                           **kwargs)
             P.adjust_mosaicity(mos_dom, mos_spread)
-            P.primer( crystal, en[i_color], flux[i_color], FF[i_color])
+            P.primer(crystal, en[i_color], flux[i_color], FF[i_color])
             JR = JitterFactory(crystal, P, R[pid], dat, szx=szx, szy=szy)
             if pid not in out:  # initialize
                 out[pid] = JR.jitter_Amat(scanX, scanY, scanZ, plot=False)

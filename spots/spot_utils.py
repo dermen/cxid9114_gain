@@ -162,7 +162,24 @@ def npix_per_spot(refl_tbl):
     return all_npix 
 
 
-def strong_spot_mask(refl_tbl, img_size):
+def get_single_refl_spot_mask(refl, img_size):
+    """assume refl contains shoebox, img_size is (Nslow-scan , Nfast-scan) format"""
+    from dials.algorithms.shoebox import MaskCode
+    mask = refl['shoebox'].mask.as_numpy_array()
+
+    code = MaskCode.Foreground.real
+
+    x1, x2, y1, y2, z1, z2 = refl['shoebox'].bbox
+
+    spot_mask = np.zeros(img_size, bool)
+
+    slcX = slice(x1, x2, 1)
+    slcY = slice(y1, y2, 1)
+    spot_mask[slcY, slcX] = mask & code == code
+    return spot_mask
+
+
+def strong_spot_mask(refl_tbl, img_size, as_composite=True):
     from dials.algorithms.shoebox import MaskCode
     Nrefl = len( refl_tbl)
     masks = [ refl_tbl[i]['shoebox'].mask.as_numpy_array()
@@ -171,12 +188,20 @@ def strong_spot_mask(refl_tbl, img_size):
 
     x1, x2, y1, y2, z1, z2 = zip(*[refl_tbl[i]['shoebox'].bbox
                                    for i in range(Nrefl)])
+    if not as_composite:
+        spot_masks = []
     spot_mask = np.zeros(img_size, bool)
     for i1, i2, j1, j2, M in zip(x1, x2, y1, y2, masks):
         slcX = slice(i1, i2, 1)
         slcY = slice(j1, j2, 1)
         spot_mask[slcY, slcX] = M & code == code
-    return spot_mask
+        if not as_composite:
+            spot_masks.append(spot_mask.copy())
+            spot_mask *= False
+    if as_composite:
+        return spot_mask
+    else:
+        return spot_masks
 
 #def strong_spot_mask(refl_tbl, img_size):
 #    Nrefl = len( refl_tbl)
