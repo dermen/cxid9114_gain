@@ -33,7 +33,8 @@ class JitterFactory:
 
         self.Patt = Patt
         self.data = data_image
-        self.rois = spot_utils.get_spot_roi(refls, dxtbx_image_size=detector.get_image_size(), szx=szx, szy=szy)
+        self.rois = spot_utils.get_spot_roi(refls, 
+                dxtbx_image_size=detector.get_image_size(), szx=szx, szy=szy)
         self.spotX, self.spotY, _ = spot_utils.xyz_from_refl(refls)
         self.spot_mask = spot_utils.strong_spot_mask(refls, self.data.shape)
         self.counts = spot_utils.count_roi_overlap(self.rois, img_size=self.data.shape)
@@ -154,27 +155,33 @@ class JitterFactory:
         return new_cryst
 
     @staticmethod
-    def jitter_shape(seed=None, min_Ncell=7, max_Ncell = 30,
+    def jitter_shape(seed=None, min_Ncell=7, max_Ncell = 80,
+                    min_ratio=0.2, max_ratio=1,
                      mos_fwhm=0.011729, mos_scale=0.006,
-                     min_Nmos_dom=1, max_Nmos_dom=20):
+                     min_mos_spread=-.005, max_mos_spread=0.1):
         """
-
         :param seed:  random seed
         :param min_Ncell: minimum number of cells along an a-b-c axis
         :param max_Ncell: maximum '' '' ''
         :param mos_fwhm: sample the mosaicity width itself with a variance
         :param mos_scale: scale factor to determine mosacicity spread, this is sampled by mos_fwhm
-        :param min_Nmos_dom: minimum number of mosaic domains
-        :param max_Nmos_dom: maximum number of mosaic domains
         :return: dictionary of randomized shape parameters to pass to simtbx
         """
         np.random.seed(seed)
         xtal_shape = np.random.choice(['gauss', 'tophat', 'round', 'square'])
-        Nmos_dom = np.random.randint(min_Nmos_dom, max_Nmos_dom)
-        Nmos_spread = np.random.normal(Nmos_dom * mos_scale, mos_fwhm/2.3458)
+        mos_spread = np.random.uniform(min_mos_spread, max_mos_spread)
+        Ncell_a = np.random.uniform(min_Ncell, max_Ncell )
+        Ncell_b = int(Ncell_a * np.random.uniform( min_ratio, max_ratio))
+        Ncell_c = int(Ncell_a * np.random.uniform( min_ratio, max_ratio))
+        
+        Ncell_b = max( Ncell_b,1)
+        Ncell_c = max( Ncell_c,1)
+        Ncell_abc = map( int, [Ncell_a, Ncell_b, Ncell_c] )
+        np.random.shuffle( Ncell_abc)
+
         Ncell_abc = np.random.randint(min_Ncell, max_Ncell, 3)
-        return {'shape': xtal_shape, 'Nmos_dom': Nmos_dom,
-                'mos_spread': Nmos_spread, 'Ncells_abc': Ncell_abc}
+        return {'shape': xtal_shape, 
+                'mos_spread': mos_spread, 'Ncells_abc': Ncell_abc}
 
 
 def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,

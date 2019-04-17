@@ -440,10 +440,13 @@ class PatternFactory:
         self.SIM2.raw_pixels *= 0
         self.SIM2.region_of_interest = self.FULL_ROI
 
-    def sim_rois(self, rois, reset=True):
+    def sim_rois(self, rois, reset=True, cuda=False):
         for roi in rois:
             self.SIM2.region_of_interest = roi
-            self.SIM2.add_nanoBragg_spots()
+            if cuda:
+                self.SIM2.add_nanoBragg_spots_cuda()
+            else:
+                self.SIM2.add_nanoBragg_spots()
 
         img = self.SIM2.raw_pixels.as_numpy_array()
         if reset:
@@ -509,7 +512,7 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=0,
 def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                    Gauss=False, oversample=0, Ncells_abc=(5,5,5),verbose=0,
                    div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15, profile=None,
-                   roi_pp=None, counts_pp=None):
+                   roi_pp=None, counts_pp=None, cuda=False):
     Npan = len(detector)
     Nchan = len(energies)
 
@@ -544,9 +547,9 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
             #from IPython import embed
             #embed()
             if roi_pp is None:
-                color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True)
+                color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True, cuda=cuda)
             else:
-                color_img = PattF.sim_rois(rois=roi_pp[ii], reset=True)
+                color_img = PattF.sim_rois(rois=roi_pp[ii], reset=True, cuda=cuda)
                 where_finite = counts_pp[ii] > 0
                 if np.any(where_finite):
                     color_img[where_finite] /= counts_pp[ii][where_finite]
