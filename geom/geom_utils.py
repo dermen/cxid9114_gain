@@ -3,6 +3,29 @@ import numpy as np
 from dxtbx.model import Detector
 from dials.array_family import flex
 
+def get_spot_patches(M, fc='none', ec='C1', lw=1):
+    """ a list of strong spot masks"""
+    import pylab as plt
+    import matplotlib as mpl
+    
+    patches = []
+    
+    y,x = np.where( M)
+
+    pts = [ [(i-.5, j-.5),
+            ( i-.5, j+.5),
+            (i+.5, j+.5),
+            (i+.5,j-.5),
+            (i-.5, j-.5)] for i,j in zip(x,y) ]
+
+    for p in pts:
+        path = mpl.path.Path( p)
+        patch = mpl.patches.PathPatch( path, fc=fc, ec=ec, lw=lw)
+        patches.append( patch)
+
+    return patches
+
+
 def twocolor_deltapix(panel, beamA, beamB):
     """get max number of pixels spanned by two color spots on panel"""
     waveA = beamA.get_wavelength() 
