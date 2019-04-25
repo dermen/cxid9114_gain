@@ -207,7 +207,7 @@ def main3():
     det = psana.Detector('CxiDs2.0:Cspad.0')
     dark = det.pedestals(62)
     gain_map = det.gain_mask(62) == 1
-    plt.imshow( gain_map[0])
+    plt.imshow(gain_map[0])
     plt.show()
     mask = mask_utils.mask_small_regions(gain_map)
     mask2 = np.load("details_mask.npy")

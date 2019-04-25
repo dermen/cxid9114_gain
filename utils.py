@@ -28,23 +28,23 @@ class FormatInMemory:
         if image.dtype != np.float64:
             self.image = self.image.astype(np.float64)
         if mask is None:
-            self.mask = np.ones_like( self.image).astype(np.bool)
+            self.mask = np.ones_like(self.image).astype(np.bool)
         else:
-            assert (mask.shape==image.shape)
-            assert( mask.dtype == bool)
+            assert (mask.shape == image.shape)
+            assert(mask.dtype == bool)
             self.mask = mask
 
     def get_raw_data(self):
         if len(self.image.shape)==2:
             return flex.double(self.image)
         else:
-            return tuple( [flex.double(panel) for panel in self.image])
+            return tuple([flex.double(panel) for panel in self.image])
 
     def get_mask(self, goniometer=None):
         if len(self.image.shape)==2:
             return flex.bool(self.mask)
         else:
-            return tuple( [flex.bool(panelmask) for panelmask in self.mask])
+            return tuple([flex.bool(panelmask) for panelmask in self.mask])
 
 
 def datablock_from_numpyarrays(image, detector, beam, mask=None):

@@ -397,7 +397,7 @@ def check_indexable2(refls_data, refls_sim, detector, beam, crystal, hkl_tol=.15
     sim_pid = []
     indexed = np.zeros( len(refls_data), bool)
     
-    for i_r,r in enumerate(refls_data):
+    for i_r, r in enumerate(refls_data):
         indexable = True
         
         mil_idx = Hi_dat[i_r]
@@ -409,7 +409,7 @@ def check_indexable2(refls_data, refls_sim, detector, beam, crystal, hkl_tol=.15
         if miller_dist > 0:  # the miller index of the data spot was not simulated
             indexable = False
 
-        res = 1./ np.linalg.norm(Q_dat[i_r])
+        res = 1. / np.linalg.norm(Q_dat[i_r])
         pid = r['panel']
         sim_intens = refls_sim['intensity.sum.value'][i_r_sim]
         if not indexable:

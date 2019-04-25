@@ -285,7 +285,7 @@ class PatternFactory:
 
     def __init__(self, crystal=None, detector=None, beam=None,
                  Ncells_abc=(10,10,10), Gauss=False, oversample=0, panel_id=0,
-                 recenter=True, verbose=10, profile=None ):
+                 recenter=True, verbose=10, profile=None):
         """
         :param crystal:  dials crystal model
         :param detector:  dials detector model
@@ -440,11 +440,16 @@ class PatternFactory:
         self.SIM2.raw_pixels *= 0
         self.SIM2.region_of_interest = self.FULL_ROI
 
-    def sim_rois(self, rois, reset=True, cuda=False):
+    def sim_rois(self, rois, reset=True, cuda=False, omp=False):
         for roi in rois:
             self.SIM2.region_of_interest = roi
             if cuda:
                 self.SIM2.add_nanoBragg_spots_cuda()
+            elif omp:
+                from boost.python import streambuf  # will deposit printout into dummy StringIO as side effect
+                from six.moves import StringIO
+                self.SIM2.add_nanoBragg_spots_nks(streambuf(StringIO()))
+                print "I RAN OMP"
             else:
                 self.SIM2.add_nanoBragg_spots()
 
@@ -512,7 +517,7 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=0,
 def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                    Gauss=False, oversample=0, Ncells_abc=(5,5,5),verbose=0,
                    div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15, profile=None,
-                   roi_pp=None, counts_pp=None, cuda=False):
+                   roi_pp=None, counts_pp=None, cuda=False, omp=False, gimmie_Patt=False):
     Npan = len(detector)
     Nchan = len(energies)
 
@@ -544,19 +549,19 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                          F=fcalcs[i_en],
                          flux=fluxes[i_en])
 
-            #from IPython import embed
-            #embed()
             if roi_pp is None:
-                color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True, cuda=cuda)
+                color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True, cuda=cuda, omp=omp)
             else:
-                color_img = PattF.sim_rois(rois=roi_pp[ii], reset=True, cuda=cuda)
+                color_img = PattF.sim_rois(rois=roi_pp[ii], reset=True, cuda=cuda, omp=omp)
                 where_finite = counts_pp[ii] > 0
                 if np.any(where_finite):
                     color_img[where_finite] /= counts_pp[ii][where_finite]
 
             panel_imgs[i_en].append(color_img)
-
-    return panel_imgs
+    if gimmie_Patt:
+        return panel_imgs, PattF
+    else:
+        return panel_imgs
 
 
 def save_twocolor(simsAB, iset, fname, force=False):

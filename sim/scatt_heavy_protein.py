@@ -14,12 +14,14 @@ pdbin = pdb.input(source_info=None, lines=lines)
 xr = pdbin.xray_structure_simple()
 sc = xr.scatterers()
 sym = [s.element_symbol() for s in sc]
-yb_pos = [i for i, s in enumerate(sym) if s=='Yb']
+yb_pos = [i for i, s in enumerate(sym) if s == 'Yb']
 
 # Lookup the anomolous contributions TODO: consider doing this for all atoms and checking the difference
 
 print "Looking up anomalous contributions for all atoms!"
-for s in sc:
+for i, s in enumerate(sc):
+    if i in yb_pos:
+        continue
     fp, fdp = scattering_factors.elem_fp_fdp_at_eV(
         s.element_symbol(),
         energy_eV,
@@ -54,12 +56,13 @@ Fa = xr3.structure_factors(d_min=2,
 Ap = Fp.data().as_numpy_array()
 Aa = Fa.data().as_numpy_array()
 
-print "Computing Ftotal"
+print "Computing F total"
 Ftot = xr.structure_factors(d_min=2, algorithm='direct', anomalous_flag=True).f_calc()
 Atot = Ftot.data().as_numpy_array()
 
 print "These should be equalish!"
 assert (np.allclose(Atot, Aa+Ap))
 
-out = {"Aprotein": Fp, "Aheavy": Fa}
+out = {"Aprotein": Fp, "Aheavy": Fa,"Atotal": Ftot }
 utils.save_flex(out, output_name)
+
