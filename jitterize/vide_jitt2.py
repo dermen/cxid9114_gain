@@ -41,7 +41,6 @@ data = [data[pid] for pid in panel_ids]
 
 
 
-
 #spotdata = np.load("crystR.spotdata.pkl.npz")
 #Malls = spotdata["Malls"][()]
 

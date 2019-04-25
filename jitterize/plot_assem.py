@@ -59,9 +59,22 @@ if __name__ =="__main__":
     dataname = sys.argv[1]
     data = np.load(dataname)
     title = sys.argv[2]
-    contrast = float(sys.argv[3])
+    try:
+        contrast = float(sys.argv[3])
+    except IndexError:
+        contrast = 0.075
     psf = load_psf_from_npz("xfel_psf.npz") 
     img2 = data['sims_wNoise']
+    img2 = data['sims']
+    img2 = np.array([np.random.normal(I, I.mean()*4) for I in img2])
+    try:
+        vmax = float(sys.argv[4])
+    except IndexError:
+        vmax=None
+    try:
+        vmin = float(sys.argv[5])
+    except IndexError:
+        vmin=None
     if 'panel_ids' in data.keys():
         panel_ids = data['panel_ids']
     else:

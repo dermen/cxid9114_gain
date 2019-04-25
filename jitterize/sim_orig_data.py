@@ -12,6 +12,8 @@ from cxid9114 import utils
 from cxid9114.spots import spot_utils
 import os
 import sys
+from dxtbx.model.detector import Detector
+from scitbx.array_family import flex
 
 # OPEN THE DETECTOR AND THE BEAM!
 det = detector = utils.open_flex("xfel_det.pkl")
@@ -27,22 +29,18 @@ except IndexError:
     outdir = "OUTS/"
 
 szx = szy = 11
-spec_data = np.load("spec_gamma5.npz")
+spec_data = np.load("spec_gamma2.npz")
 ENERGIES = spec_data['en']
 FLUX = spec_data['flux'] * 1e12
 
 FF = [None]*len( FLUX)
 FF[0] = 1e8
-panel_ids = [32,34,50]
+panel_ids = [32,34,39,38,50]
 #ENERGIES = [parameters.ENERGY_LOW] #, parameters.ENERGY_HIGH]
 #FF = [1e8] #, None]
 #FLUX = [1e12] #, 1e12]
-cell_fwhm=0.14
-rot_width=.3 
-min_Ncell=5
-max_Ncell=10
-Nmos = 500
-mos_spread = 0.35
+Nmos = 100
+mos_spread = 0.18
 szx = szy = 11
 
 cryst_name = "ps2.crystR.pkl"
@@ -62,9 +60,9 @@ simsAB, Patt = sim_utils.sim_twocolors2(
     energies= ENERGIES,
     fluxes=FLUX,
     pids=panel_ids,
-    profile='tophat',
+    profile='gauss',
     oversample=0,
-    Ncells_abc=(10, 10, 10), 
+    Ncells_abc=(20, 20, 20), 
     mos_dom=Nmos,
     verbose=1,
     mos_spread=mos_spread,
@@ -72,15 +70,7 @@ simsAB, Patt = sim_utils.sim_twocolors2(
     gimmie_Patt=True)
 print "TIME: %.4f" % (time.time()-t)
 
-beamA = deepcopy(beam)
-beamB = deepcopy(beam)
-beamA.set_wavelength(parameters.WAVELEN_LOW)
-beamB.set_wavelength(parameters.WAVELEN_HIGH)
-
 sims = np.sum( [simsAB[k] for k in simsAB], axis=0)
-
-from dxtbx.model.detector import Detector
-from scitbx.array_family import flex
 
 det2 = Detector()
 det2_panel_mapping = {}
@@ -88,7 +78,7 @@ for i_pan, pid in enumerate(panel_ids):
     det2.add_panel(det[pid])
     det2_panel_mapping[i_pan] = pid
 
-refl_data = refls_strong = spot_utils.refls_from_sims(sims, det2, beamA, thresh=1e-3)
+refl_data = refls_strong = spot_utils.refls_from_sims(sims, det2, beam, thresh=1e-3)
 
 refl_panel = refl_data['panel'].as_numpy_array()
 for i_pan, pid in det2_panel_mapping.items():
