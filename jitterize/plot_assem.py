@@ -66,7 +66,7 @@ if __name__ =="__main__":
     psf = load_psf_from_npz("xfel_psf.npz") 
     img2 = data['sims_wNoise']
     img2 = data['sims']
-    img2 = np.array([np.random.normal(I, I.mean()*4) for I in img2])
+    img2 = np.array([np.random.normal(I+10, I.mean()*2) for I in img2])
     try:
         vmax = float(sys.argv[4])
     except IndexError:

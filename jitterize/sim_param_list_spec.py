@@ -20,14 +20,13 @@ try:
 except IndexError:
     tag2 = ""
 
-panel_ids = [32,34,50]
+panel_ids = [32,34,39,38,50]
 
-spotdata = np.load("crystR.spotdata.pkl.npz")
-roi_pp = spotdata['roi_pp'][()]
-counts_pp = spotdata["counts_pp"][()]
-
-roi_pp = np.array([roi_pp[pid] for pid in panel_ids])
-counts_pp = np.array([counts_pp[pid] for pid in panel_ids])
+#spotdata = np.load("crystR.spotdata.pkl.npz")
+#roi_pp = spotdata['roi_pp'][()]
+#counts_pp = spotdata["counts_pp"][()]
+#roi_pp = np.array([roi_pp[pid] for pid in panel_ids])
+#counts_pp = np.array([counts_pp[pid] for pid in panel_ids])
 
 param_name = sys.argv[1]
 params = utils.open_flex(param_name)
@@ -40,7 +39,6 @@ output_basename = os.path.join( outdir, "simparams_%s" % tag)
 # load the project beam, crystal-base model, and detector
 det = detector = utils.open_flex("xfel_det.pkl")
 
-
 def sim_params(params):
     """special jitterization params list"""
     t = time.time()
@@ -52,16 +50,19 @@ def sim_params(params):
     beam = params['beam']
     Ncells = params['Ncells_abc']
 
-    if 'mos_spread' in params.keys():
-        mos_spread = params['mos_spread']
-        Nmos_dom = 200
-    else:
-        mos_spread = 0
-        Nmos_dom = 1
+    #if 'mos_spread' in params.keys():
+    #    mos_spread = params['mos_spread']
+    #    Nmos_dom = 100
+    #else:
+    #    Nmos_dom = 1
+    #    mos_spread = 0.10
     
+    mos_spread=0.1
+    Nmos_dom=50
+
     # setup the formfactors
     FF = [None]*len( FLUX)
-    FF[0] = 1e8
+    FF[0] = 1e5
     
     print "### CRYSTAL SIMULATION %d / %d ###" % (i_trial+1, N)
     print new_crystal.get_unit_cell().parameters()
@@ -81,9 +82,10 @@ def sim_params(params):
         Ncells_abc = Ncells,
         mos_dom=Nmos_dom, 
         mos_spread=mos_spread, 
-        roi_pp=roi_pp,
-        counts_pp=counts_pp,
-        cuda=False)
+        verbose=0,
+        #roi_pp=roi_pp,
+        #counts_pp=counts_pp,
+        omp=True)
     print("\t... took %.4f seconds" % (time.time() - t))
 
     return simsAB

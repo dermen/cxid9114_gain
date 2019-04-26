@@ -27,6 +27,10 @@ if 'panel_ids' in f:
 else:
     panel_ids = np.arange(64)
 
+print (panel_ids)
+
+pan_map = {pid:i_pan  for i_pan,pid in enumerate(panel_ids)}
+
 d = np.load("xfel_psf.npz")
 psf = np.array([d['p'], d['s'], d['f']])
 p64, s64, f64 = geom_help.cspad_geom_splitter(psf, 'pixels')
@@ -35,10 +39,12 @@ p64, s64, f64 = geom_help.cspad_geom_splitter(psf, 'pixels')
 #data = np.load("noise_img3.npz")["img"]
 
 # NOTE this patterns has poly spec but no mosaicity
-dataname = "with_spec_gamma5/ps2.crystRwith_spec_gamma5_spotdata.pkl.npz"
-data = np.load(dataname)['sims_wNoise']
-data = [data[pid] for pid in panel_ids]
-
+#dataname = "with_spec_gamma5/ps2.crystRwith_spec_gamma5_spotdata.pkl.npz"
+dataname = "orig_gamm2/ps2.crystRorig_gamm2_spotdata.pkl.npz" 
+#data = np.load(dataname)['sims_wNoise']
+data = np.load(dataname)['sims']
+data = np.array([np.random.normal(I+10, I.mean()*2) for I in data])
+#data = [data[ipid] for pid in panel_ids]
 
 
 #spotdata = np.load("crystR.spotdata.pkl.npz")

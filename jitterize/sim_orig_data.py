@@ -17,7 +17,8 @@ from scitbx.array_family import flex
 
 # OPEN THE DETECTOR AND THE BEAM!
 det = detector = utils.open_flex("xfel_det.pkl")
-beam = utils.open_flex("ps2.beam.pkl")
+beam = utils.open_flex("beam0") #ps2.beam.pkl")
+#beam = utils.open_flex("ps2.beam.pkl")
 
 try:
     tag = sys.argv[1]
@@ -34,13 +35,14 @@ ENERGIES = spec_data['en']
 FLUX = spec_data['flux'] * 1e12
 
 FF = [None]*len( FLUX)
-FF[0] = 1e8
+FF[0] = 1e5
+panel_ids = [38]
 panel_ids = [32,34,39,38,50]
 #ENERGIES = [parameters.ENERGY_LOW] #, parameters.ENERGY_HIGH]
 #FF = [1e8] #, None]
 #FLUX = [1e12] #, 1e12]
-Nmos = 100
-mos_spread = 0.18
+Nmos = 50
+mos_spread = 0.1
 szx = szy = 11
 
 cryst_name = "ps2.crystR.pkl"
@@ -62,23 +64,23 @@ simsAB, Patt = sim_utils.sim_twocolors2(
     pids=panel_ids,
     profile='gauss',
     oversample=0,
-    Ncells_abc=(20, 20, 20), 
+    Ncells_abc=(10, 10, 10), 
     mos_dom=Nmos,
     verbose=1,
     mos_spread=mos_spread,
-    omp=False,
+    omp=True,
     gimmie_Patt=True)
 print "TIME: %.4f" % (time.time()-t)
 
 sims = np.sum( [simsAB[k] for k in simsAB], axis=0)
-
 det2 = Detector()
 det2_panel_mapping = {}
 for i_pan, pid in enumerate(panel_ids):
     det2.add_panel(det[pid])
     det2_panel_mapping[i_pan] = pid
 
-refl_data = refls_strong = spot_utils.refls_from_sims(sims, det2, beam, thresh=1e-3)
+
+refl_data = refls_strong = spot_utils.refls_from_sims(sims, det2, beam, thresh=10)
 
 refl_panel = refl_data['panel'].as_numpy_array()
 for i_pan, pid in det2_panel_mapping.items():
@@ -93,7 +95,7 @@ refl_data['panel'] = flex.size_t(refl_panel)
 outputname = os.path.join(outdir, output_basename) 
 
 reflsPP = spot_utils.refls_by_panelname(refl_data)
-assert( set(reflsPP.keys()) == set(panel_ids))
+#assert( set(reflsPP.keys()) == set(panel_ids))
 
 roi_pp = []
 counts_pp =[]
