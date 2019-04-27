@@ -40,12 +40,12 @@ p64, s64, f64 = geom_help.cspad_geom_splitter(psf, 'pixels')
 
 # NOTE this patterns has poly spec but no mosaicity
 #dataname = "with_spec_gamma5/ps2.crystRwith_spec_gamma5_spotdata.pkl.npz"
-dataname = "orig_gamm2/ps2.crystRorig_gamm2_spotdata.pkl.npz" 
+dataname = "orig_data_gamma2_alpha/cryst0_spotdata.pkl.npz" 
 #data = np.load(dataname)['sims_wNoise']
 data = np.load(dataname)['sims']
 data = np.array([np.random.normal(I+10, I.mean()*2) for I in data])
 #data = [data[ipid] for pid in panel_ids]
-
+print (100)
 
 #spotdata = np.load("crystR.spotdata.pkl.npz")
 #Malls = spotdata["Malls"][()]
