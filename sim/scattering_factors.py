@@ -2,10 +2,13 @@ from joblib import Parallel, delayed, effective_n_jobs
 import os
 import numpy as np
 from scipy import constants
-import iotbx
+
+from cctbx.eltbx import henke, sasaki
+
 from cctbx.eltbx import henke
 import inspect
 from cxid9114 import utils
+from cxid9114 import refdata
 
 
 cwd = os.path.dirname(os.path.abspath(inspect.getsourcefile(lambda:0)))
@@ -20,6 +23,35 @@ wavelens_A = 1e10 * constants.h * constants.c/ \
              (constants.electron_volt* interp_energies)
 
 
+def elem_fp_fdp_at_eV(elem_symbol, energy, how="henke"):
+    if how == 'sasaki':
+        tbl = sasaki.table(elem_symbol)
+    else:
+        tbl = henke.table(elem_symbol)
+    keV = energy * 1e-3
+    factor = tbl.at_kev(keV)
+    return factor.fp(), factor.fdp()
+
+def Yb_fp_fdp_at_eV(energy, how="henke"):
+    if how=='sasaki':
+        tbl = sasaki.table("Yb")
+    elif how=='henke':
+        tbl = henke.table("Yb")
+
+    keV = energy * 1e-3
+    factor = tbl.at_kev(keV)
+    return factor.fp(), factor.fdp()
+
+
+def Yb_f0_at_reso(reso):
+    cman_parm = refdata.get_cromermann_parameters(70)
+
+    if isinstance(reso, int) or isinstance(reso, float):
+        reso =np.array([reso])
+    Qmag = 2*np.pi/reso  # NOTE: cmann code uses 2PI convention
+    cman_data = refdata.get_cmann_form_factors(cman_parm, Qmag)
+    return cman_data.values()[0]
+
 def get_scattF(wavelen_A, pdb_name, algo, dmin, ano_flag):
     """
     mostly borrowed from tst_nanoBragg_basic.py
@@ -30,6 +62,7 @@ def get_scattF(wavelen_A, pdb_name, algo, dmin, ano_flag):
     pdb_in = pdb.input(source_info=None, lines=pdblines)
     xray_structure = pdb_in.xray_structure_simple()
     scatts = xray_structure.scatterers()
+
     for sc in scatts:
         expected_henke = henke.table(
             sc.element_symbol()).at_angstrom(wavelen_A)

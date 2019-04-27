@@ -440,7 +440,8 @@ class PatternFactory:
         self.SIM2.raw_pixels *= 0
         self.SIM2.region_of_interest = self.FULL_ROI
 
-    def sim_rois(self, rois, reset=True, cuda=False, omp=False):
+    def sim_rois(self, rois, reset=True, cuda=False, omp=False, add_water=False,
+                 add_noise=False, water_par=None, noise_par=None, boost=1):
         for roi in rois:
             self.SIM2.region_of_interest = roi
             if cuda:
@@ -449,11 +450,28 @@ class PatternFactory:
                 from boost.python import streambuf  # will deposit printout into dummy StringIO as side effect
                 from six.moves import StringIO
                 self.SIM2.add_nanoBragg_spots_nks(streambuf(StringIO()))
-                print "I RAN OMP"
             else:
                 self.SIM2.add_nanoBragg_spots()
 
+        self.SIM2.raw_pixels*=boost
+        if add_water:
+            water_scatter = flex.vec2_double(
+                [(0, 2.57), (0.0365, 2.58), (0.07, 2.8), (0.12, 5), (0.162, 8), (0.2, 6.75), (0.18, 7.32),
+                 (0.216, 6.75), (0.236, 6.5), (0.28, 4.5), (0.3, 4.3), (0.345, 4.36), (0.436, 3.77), (0.5, 3.17)])
+            self.SIM2.Fbg_vs_stol = water_scatter
+            self.SIM2.amorphous_sample_thick_mm = 0.004  # typical GDVN
+            self.SIM2.amorphous_density_gcm3 = 1
+            self.SIM2.amorphous_molecular_weight_Da = 18
+            #self.SIM2.flux = 1e12
+            #self.SIM2.beamsize_mm = 0.003  # square (not user specified)
+            self.SIM2.exposure_s = 1.0  # multiplies flux x exposure
+            self.SIM2.add_background()
+
+        if add_noise:
+            self.SIM2.add_noise()
+
         img = self.SIM2.raw_pixels.as_numpy_array()
+
         if reset:
             self.SIM2.raw_pixels *= 0
             self.SIM2.region_of_interest = self.FULL_ROI
@@ -517,7 +535,8 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=0,
 def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                    Gauss=False, oversample=0, Ncells_abc=(5,5,5),verbose=0,
                    div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15, profile=None,
-                   roi_pp=None, counts_pp=None, cuda=False, omp=False, gimmie_Patt=False):
+                   roi_pp=None, counts_pp=None, cuda=False, omp=False, gimmie_Patt=False,
+                   add_water=False, add_noise=False, boost=1):
     Npan = len(detector)
     Nchan = len(energies)
 
@@ -550,9 +569,11 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                          flux=fluxes[i_en])
 
             if roi_pp is None:
-                color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True, cuda=cuda, omp=omp)
+                color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True, cuda=cuda, omp=omp,
+                                           add_water=add_water, add_noise=add_noise, boost=1)
             else:
-                color_img = PattF.sim_rois(rois=roi_pp[ii], reset=True, cuda=cuda, omp=omp)
+                color_img = PattF.sim_rois(rois=roi_pp[ii], reset=True, cuda=cuda, omp=omp,
+                                           add_water=add_water, add_noise=add_noise,boost=1)
                 where_finite = counts_pp[ii] > 0
                 if np.any(where_finite):
                     color_img[where_finite] /= counts_pp[ii][where_finite]
