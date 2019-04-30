@@ -89,7 +89,7 @@ def refls_to_q(refls, detector, beam, update_table=False):
     q_vecs = []
     for r in refls:
         pid = r['panel']
-        i_fs, i_ss,_ = r['xyzobs.px.value']
+        i_fs, i_ss, _ = r['xyzobs.px.value']
         panel = detector[pid]
         orig = orig_vecs[pid] #panel.get_origin()
         fs = fs_vecs[pid] #panel.get_fast_axis()
@@ -98,8 +98,8 @@ def refls_to_q(refls, detector, beam, update_table=False):
         fs_pixsize, ss_pixsize = panel.get_pixel_size()
         s1 = orig + i_fs*fs*fs_pixsize + i_ss*ss*ss_pixsize  # scattering vector
         s1 = s1 / np.linalg.norm(s1) / beam.get_wavelength()
-        s1_vecs.append( s1)
-        q_vecs.append( s1-beam.get_s0())
+        s1_vecs.append(s1)
+        q_vecs.append(s1-beam.get_s0())
 
     if update_table:
         refls['s1'] = flex.vec3_double(tuple(map(tuple,s1_vecs)))
@@ -132,7 +132,7 @@ def fs_ss_to_q(fs, ss, pids, detector, beam):
 
     s1_vecs = []
     q_vecs = []
-    for i_fs, i_ss, pid in zip( fs,ss, pids):
+    for i_fs, i_ss, pid in zip(fs,ss, pids):
         panel = detector[pid]
         orig = orig_vecs[pid] #panel.get_origin()
         fs = fs_vecs[pid] #panel.get_fast_axis()
@@ -607,7 +607,7 @@ def msisrp_overlap(refls_sim, refls_data, detector, xy_only=False):
     return dists, dist_vecs
 
 
-def refls_from_sims(panel_imgs, detector, beam, thresh=0, filter=None, **kwargs ):
+def refls_from_sims(panel_imgs, detector, beam, thresh=0, filter=None, panel_ids=None, **kwargs ):
     """
     This class is for converting the centroids in the noiseless simtbx images
     to a multi panel reflection table
@@ -623,6 +623,7 @@ def refls_from_sims(panel_imgs, detector, beam, thresh=0, filter=None, **kwargs 
     :param thresh: threshol intensity for labeling centroids
     :param filter: optional filter to apply to images before
         labeling threshold, typically one of scipy.ndimage's filters
+    :param pids: panel IDS , else assumes panel_imgs is same length as detector
     :param kwargs: kwargs to pass along to the optional filter
     :return: a reflection table of spot centroids
     """
@@ -631,8 +632,10 @@ def refls_from_sims(panel_imgs, detector, beam, thresh=0, filter=None, **kwargs 
     from dials.algorithms.spot_finding.finder import PixelListToReflectionTable
     from cxid9114 import utils
 
+    if panel_ids is None:
+        panel_ids = np.arange( len(detector))
     pxlst_labs = []
-    for i in range(len(detector)):
+    for i, pid in enumerate(panel_ids):
         plab = PixelListLabeller()
         img = panel_imgs[i]
         if filter is not None:
@@ -650,7 +653,7 @@ def refls_from_sims(panel_imgs, detector, beam, thresh=0, filter=None, **kwargs 
         filter_spots=FilterRunner(),  # must use a dummie filter runner!
         write_hot_pixel_mask=False)
 
-    dblock = utils.datablock_from_numpyarrays( panel_imgs, detector, beam)
+    dblock = utils.datablock_from_numpyarrays(panel_imgs, detector, beam)
     iset = dblock.extract_imagesets()[0]
     refls = pixlst_to_reftbl(iset, pxlst_labs)[0]
 

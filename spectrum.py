@@ -1,7 +1,6 @@
 
 import numpy as np
 from scipy.signal import correlate2d 
-from scipy import ndimage
 from scipy.interpolate import RectBivariateSpline
 
 
@@ -79,15 +78,15 @@ def get_spectrum(spec):
     en_bins = np.arange( Edata[0],Edata[-1]+1, ev_width)
 
 #   now we can bin 
-    spec_hist = np.histogram( Edata , en_bins, weights=raw_spec)[0]
+    spec_hist = np.histogram(Edata, en_bins, weights=raw_spec)[0]
 
-    return en_bins[1:]*.5  + en_bins[:-1]*.5, spec_hist , matcher, raw_spec
+    return en_bins[1:]*.5 + en_bins[:-1]*.5, spec_hist , matcher, raw_spec
 
 
 # if on psana
 def get_spec_data(f):
     idx = int(f.split('_')[1])
-    ev = psanaR.event( loader.times[idx])
+    ev = psanaR.event(loader.times[idx])
     spec_img = spec.image(ev)
     return get_spectrum(spec_img)
 
