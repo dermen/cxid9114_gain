@@ -336,8 +336,10 @@ class PatternFactory:
         self.FULL_ROI = self.SIM2.region_of_interest
 
         if recenter:  # FIXME: I am not sure why this seems to be necessary to preserve geom
+            #a = self.SIM2.beam_center_mm
+            #print "Beam center was:",a
             self.SIM2.beam_center_mm = self.detector[panel_id].get_beam_centre(self.beam.get_s0())
-
+            #print "Now, beam center is ", self.SIM2.beam_center_mm, "Why is this happening???"
 
     def make_pattern_default(self, crystal, spectrum, show_spectrum=False,
                      mosaic_domains=5,
@@ -466,6 +468,7 @@ class PatternFactory:
             #self.SIM2.beamsize_mm = 0.003  # square (not user specified)
             self.SIM2.exposure_s = 1.0  # multiplies flux x exposure
             self.SIM2.add_background()
+            self.SIM2.region_of_interest = self.FULL_ROI
 
         if add_noise:
             self.SIM2.add_noise()
@@ -530,7 +533,6 @@ def sim_twocolors(crystal, detector=None, panel_id=0, Gauss=False, oversample=0,
             }
 
     return dump
-
 
 def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                    Gauss=False, oversample=0, Ncells_abc=(5,5,5),verbose=0,

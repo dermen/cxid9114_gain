@@ -115,7 +115,9 @@ class JitterFactory:
         return {"A_seq": A_seq, "overlaps": np.array(overlaps), "Aopt": Aopt}
 
     @staticmethod
-    def jitter_crystal(crystal, cell_jitter_fwhm=0.6, rot_jitter_width=1, seed=None):
+    def jitter_crystal(crystal, cell_jitter_fwhm=0.6, rot_jitter_width=1, seed=None,
+                       eq=(0,0,0)):
+
         """
         :param cell_jitter_fwhm: Angstrom
         :param rot_jitter_width: degrees
@@ -126,6 +128,8 @@ class JitterFactory:
         ucell_abc = list(crystal.get_unit_cell().parameters())[:3]
         newcell_abc = np.random.normal(ucell_abc, cell_jitter_fwhm / 2.3458)
         Xdeg, Ydeg, Zdeg = np.random.uniform(-rot_jitter_width/2., rot_jitter_width/2., 3)
+
+        print ("ROTS:", Xdeg, Ydeg, Zdeg)
 
         x = col((1,0,0))
         y = col((0,1,0))
@@ -144,8 +148,16 @@ class JitterFactory:
 
         R1,R2,R3 = Rots
 
-        a,_,c = newcell_abc  # for lysozyme we want a=b
-        Bnew = sqr( (a,0,0, 0,a,0, 0,0,c)).inverse()
+        # NOTE: this below deal with equal axis lengths: randomly choose the
+        # perterbation on one
+        # and assign it to all that are equal
+        a,b,c = newcell_abc  # for lysozyme we want a=b
+        where_eq = np.where(eq)[0]
+        abc = np.array( [a,b,c])
+        if where_eq.size:
+            abc[where_eq] = np.random.choice(abc[where_eq])
+        a,b,c = abc
+        Bnew = sqr( (a,0,0, 0,b,0, 0,0,c)).inverse()
         Unew = R1*R2*R3*sqr(crystal.get_U())
 
         new_cryst = deepcopy(crystal)

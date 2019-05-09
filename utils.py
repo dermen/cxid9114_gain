@@ -8,7 +8,7 @@ from dxtbx.imageset import MemReader, MemMasker
 from dxtbx.datablock import DataBlockFactory
 from dxtbx.imageset import ImageSet, ImageSetData
 from cxid9114.spots import spot_utils
-
+from dxtbx.model.experiment_list import ExperimentListFactory
 try:
     import psana
     has_psana = True
@@ -45,6 +45,36 @@ class FormatInMemory:
             return flex.bool(self.mask)
         else:
             return tuple([flex.bool(panelmask) for panelmask in self.mask])
+
+
+
+def explist_from_numpyarrays(image, detector, beam, mask=None):
+    """
+    So that one can do e.g.
+    >> dblock = datablock_from_numpyarrays( image, detector, beam)
+    >> refl = flex.reflection_table.from_observations(dblock, spot_finder_params)
+    without having to utilize the harddisk
+
+    :param image:  numpy array image, or list of numpy arrays
+    :param mask:  numpy mask, should be same shape format as numpy array
+    :param detector: dxtbx detector model
+    :param beam: dxtbx beam model
+    :return: datablock for the image
+    """
+    if isinstance( image, list):
+        image = np.array( image)
+    if mask is not None:
+        if isinstance( mask, list):
+            mask = np.array(mask).astype(bool)
+    I = FormatInMemory(image=image, mask=mask)
+    reader = MemReader([I])
+    masker = MemMasker([I])
+    iset_Data = ImageSetData(reader, masker)
+    iset = ImageSet(iset_Data)
+    iset.set_beam(beam)
+    iset.set_detector(detector)
+    explist = ExperimentListFactory.from_imageset_and_crystal(iset, None)
+    return explist
 
 
 def datablock_from_numpyarrays(image, detector, beam, mask=None):
