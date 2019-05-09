@@ -13,9 +13,14 @@ from dxtbx.format.FormatStill import FormatStill
 from scitbx import matrix
 from dials.array_family import flex
 
-from cxid9114.geom import geom_utils
-from cxid9114.parameters import WAVELEN_LOW
-from cxid9114.common_mode.pppg import pppg
+try:
+    from cxid9114.geom import geom_utils
+    from cxid9114.parameters import WAVELEN_LOW
+    from cxid9114.common_mode.pppg import pppg
+    HAS_D91 = True
+
+except ImportError:
+    HAS_D91 = False
 
 # required HDF5 keys
 REQUIRED_KEYS = ['gain_val',
@@ -49,13 +54,17 @@ PPPG_ARGS = {'Nhigh': 100.0,
 class FormatHDF5D9114(FormatHDF5, FormatStill):
     """
     Class for reading D9114 HDF5 hit files
-    script (this script lives on the SACLA hpc).
     """
     @staticmethod
     def understand(image_file):
+        if not HAS_D91:
+            print("FAILED D91")
+            return False
         h5_handle = h5py.File(image_file, 'r')
         h5_keys = h5_handle.keys()
         understood = all([k in h5_keys for k in REQUIRED_KEYS])
+        if not understood:
+            print("FAIED D91")
         return understood
 
     def __init__(self, image_file, **kwargs):

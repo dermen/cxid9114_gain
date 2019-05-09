@@ -11,11 +11,15 @@ from dxtbx.format.Format import Format
 from dxtbx.format.FormatHDF5 import FormatHDF5
 from dxtbx.format.FormatStill import FormatStill
 from dials.array_family import flex
-from cxid9114.geom import multi_det_dict
-from cxid9114.parameters import WAVELEN_LOW
 from dxtbx.model.detector import DetectorFactory
-DET64 = DetectorFactory.from_dict(multi_det_dict.D)
 
+try:
+    from cxid9114.geom import multi_det_dict
+    from cxid9114.parameters import WAVELEN_LOW
+    HAS_D91 = True
+
+except ImportError:
+    HAS_D91 = False
 # required HDF5 keys
 REQUIRED_KEYS = ['sim64_d9114_images']
 
@@ -25,6 +29,8 @@ class FormatSim64D9114(FormatHDF5, FormatStill):
     """
     @staticmethod
     def understand(image_file):
+        if not HAS_D91:
+            return False
         h5_handle = h5py.File(image_file, 'r')
         h5_keys = h5_handle.keys()
         understood = all([k in h5_keys for k in REQUIRED_KEYS])
@@ -36,11 +42,14 @@ class FormatSim64D9114(FormatHDF5, FormatStill):
             raise IncorrectFormatError(self, image_file)
         FormatHDF5.__init__(self, image_file, **kwargs)
 
+        
+        self.DET64 = DetectorFactory.from_dict(multi_det_dict.D)
         self._h5_handle = h5py.File(self.get_image_file(), 'r')
         self._geometry_define()
+    
 
     def _geometry_define(self):
-        self._cctbx_detector = DET64
+        self._cctbx_detector = self.DET64
         self._cctbx_beam = self._beam_factory.simple(WAVELEN_LOW)
 
     def get_num_images(self):

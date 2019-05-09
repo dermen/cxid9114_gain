@@ -12,18 +12,21 @@ try:
 except ImportError:
     CAN_PLOT=False
 from xfel.cxi.cspad_ana.cspad_tbx import env_distance
-from cxid9114.common_mode.pppg import pppg
-from cxid9114.mask import mask_utils
-from cxid9114.parameters import WAVELEN_LOW
-# from cxid9114 import assemble_cspad
-# from scitbx import matrix
-# from dxtbx.model.detector import DetectorFactory
+
 from dxtbx.model.beam import BeamFactory
 from dxtbx.format.FormatXTC import locator_str
 from dxtbx.format.FormatXTCCspad import FormatXTCCspad, cspad_locator_str
 from dxtbx.format.FormatXTC import FormatXTC
 from scitbx.array_family import flex
 from libtbx import phil
+
+try:
+    from cxid9114.common_mode.pppg import pppg
+    from cxid9114.mask import mask_utils
+    from cxid9114.parameters import WAVELEN_LOW
+    HAS_D91 = True
+except ImportError:
+    HAS_D91 = False
 
 d9114_locator_str = """
   d9114 {
@@ -133,6 +136,10 @@ class FormatXTCD9114(FormatXTCCspad):
 
     @staticmethod
     def understand(image_file):
+        if not HAS_D91:
+            return False
+        if not HAS_PSANA:
+            return False
         params = FormatXTCD9114.get_params(image_file)
         return params.experiment == "cxid9114" and \
                params.d9114.common_mode_algo in ['default', 'pppg', 'unbonded']

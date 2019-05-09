@@ -13,8 +13,12 @@ from dxtbx.format.FormatStill import FormatStill
 from scitbx import matrix
 from dials.array_family import flex
 
-from cxid9114.parameters import WAVELEN_LOW
-
+try:
+    from cxid9114.parameters import WAVELEN_LOW
+    HAS_D91 = True
+except ImportError:
+    HAS_D91 = False
+    
 # required HDF5 keys
 REQUIRED_KEYS = ['simulated_d9114_images']
 PIXEL_SIZE = 0.10992  # CSPAD pixel size in mm
@@ -27,6 +31,8 @@ class FormatSimulationD9114(FormatHDF5, FormatStill):
     """
     @staticmethod
     def understand(image_file):
+        if not HAS_D91:
+            return False
         h5_handle = h5py.File(image_file, 'r')
         h5_keys = h5_handle.keys()
         understood = all([k in h5_keys for k in REQUIRED_KEYS])
