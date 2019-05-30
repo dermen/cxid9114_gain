@@ -123,18 +123,29 @@ def integrate2(R, badmask, data, gain=28, fit_bg=True, zscore=8, sz=8):
         sub_data = data[pid][j1:j2, i1:i2]
         sub_mask =  ((~allspotmask[pid]) * badmask[pid] )[j1:j2, i1:i2]
 
-        if fit_bg:
-            tilt, _, coeff = tilting_plane(sub_data,
-                        mask=sub_mask, zscore=zscore)
-       
+         
         sub_thisspotmask = thisspotmask[j1:j2,i1:i2]
-        signa[i_r] = sub_data[sub_thisspotmask].sum()
+        Is = sub_data[sub_thisspotmask].sum()
+        
         if fit_bg:
-            bg[i_r] = tilt[ sub_thisspotmask].sum()
-        # else bg[i_r]  is going to remain 0
-        signa[i_r] = (signa[i_r] - bg[i_r]) / gain
-        bg[i_r] /= gain
-        noise[i_r] = np.sqrt(signa[i_r])
+            tilt, bgmask, coeff = tilting_plane(sub_data,
+                        mask=sub_mask, zscore=zscore)
+            
+            bg_fit_mask = np.logical_and(~bgmask, sub_mask)
+            m = sub_thisspotmask.sum()
+            n = bg_fit_mask.sum()
+            m2n = float(m)/float(n)  # ratio of number of background to number of strong spot pixels
+            
+            # modifuf Is according to background plane fit
+            Is = Is - tilt[sub_thisspotmask].sum()
+            # store background pix according to Leslie 99
+            Ibg = m2n*sub_data[bg_fit_mask].sum()
+        else:
+            Ibg = 0
+        
+        signa[i_r] = Is  # signal in the spot
+        bg[i_r] = Ibg  # background around the spot
+        noise[i_r] = (Is + Ibg + m2n*Ibg) / gain
         pix_per[i_r] = thisspotmask.sum()
 
     return signa, bg, noise, pix_per
