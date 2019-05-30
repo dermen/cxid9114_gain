@@ -263,7 +263,6 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
       non_linear_ls_eigen_wrapper(n_parameters){}
     // SET A SOLVE METHOD TO OVERRIDE THE CURRENT ONE
 
-
     void set_cpp_data(vecd y_obs_, vecd w_obs_,
                     //vecd Gcurr_,
                     //vecd IAcurr_,
@@ -300,7 +299,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
 
             double IAval = std::exp(current_values[i_hkl]);
             double IBval = std::exp(current_values[Nhkl +i_hkl]);
-            double Gval = current_values[2*Nhkl + i_s];
+            double Gval = std::exp(current_values[2*Nhkl + i_s]);
 
             double y_calc = Gval * (IAval * LA[i]*PA[i]
                                         + IBval*LB[i]*PB[i]);
@@ -333,10 +332,10 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
 
           double IAval = std::exp(current_values[i_hkl]);
           double IBval = std::exp(current_values[Nhkl +i_hkl]);
-          double Gval = current_values[2*Nhkl + i_s];
+          double Gval = std::exp(current_values[2*Nhkl + i_s]);
 
           double Aterm = IAval*LA[ix]*PA[ix];
-          double Bterm = IBval * LB[ix]*PB[ix];
+          double Bterm = IBval*LB[ix]*PB[ix];
 
           // first derivitive of "yobs - ycalc" w.r.t. IA
           double dIA = Gval * Aterm; //IAval * LA[ix] * PA[ix];
@@ -353,7 +352,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           jacobian_one_row_data_pt[1] = dIB;
 
           // derivitive w.r.t. G
-          double dG = Aterm + Bterm; //IAval * LA[ix] * PA[ix]
+          double dG = Gval*(Aterm + Bterm); //IAval * LA[ix] * PA[ix]
                 //+ IBval * LB[ix] * PB[ix];
           //jacobian_one_row_indices.push_back(2*Nhkl + i_s);
           //jacobian_one_row_data.push_back(dG);
