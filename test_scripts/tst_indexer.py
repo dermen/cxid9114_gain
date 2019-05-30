@@ -20,7 +20,12 @@ img_file = \
      "    apply_gain_mask = True\n"
      "    detz_offset = 572.3938  # 572.9922 is the default\n"
      "    common_mode = default\n"
-     "}\n")
+     "}\n"
+     "d9114 {\n"
+     "    common_mode_algo = pppg\n"
+     "    savgol_polyorder = 3\n"
+     "    mask = d9114_32pan_mask.npy\n"
+     "}")
 with open(img_filename,"w") as oid:
     oid.write(img_file)
 
@@ -48,16 +53,19 @@ spot_par.spotfinder.lookup.mask = mask_file
 
 # ------ indexing parameters
 from cxid9114.index.ddi import params as mad_index_params
-mad_index_params.indexing.two_color.spiral_method = (1.25, 200000)
+mad_index_params.indexing.two_color.spiral_seed = 455
+mad_index_params.indexing.two_color.spiral_method = (0.75, 250000)
 mad_index_params.indexing.two_color.n_unique_v = 22
 mad_index_params.indexing.two_color.block_size = 25
-mad_index_params.indexing.two_color.filter_by_mag = (10,3)
+mad_index_params.indexing.two_color.filter_by_mag = (10, 3)
+from cctbx import crystal
+KNOWN_SYMMETRY = crystal.symmetry("79.1,79.1,38.5,90,90,90", "P43212")
 #mad_index_params.indexing.refinement_protocol.mode = "repredict_only"
 mad_index_params.indexing.refinement_protocol.mode = "ignore"
 
 EXP_LIST = ExperimentList()
 shot_indices = [0,1,4,8,17,19]  # shots to search for reflections
-expected_Nref = [0,3,76,14,169,179]  # expected number of reflections
+expected_Nref = [0,3,85,14,172,189]  # expected number of reflections
 
 for idx in shot_indices:
     iset = IMGSET[idx:idx + 1]
@@ -71,7 +79,7 @@ for idx in shot_indices:
 
 REFLS = []
 CRYSTALS = []
-RMSDS = []
+RMSD = []
 
 RMSD_MAXs = []
 
@@ -91,12 +99,12 @@ def tst_index_spots():
     assert(REFLS)
 
     global CRYSTALS
-    global RMSDS
+    global RMSD
     from cxi_xdr_xes.two_color.two_color_indexer import indexer_two_color
     from cxid9114.spots import spot_utils
     from libtbx.utils import Sorry
 
-    for i in [2,4,5]:  # NOTE: these are the experiments that should index
+    for i in [2, 5]:  # NOTE: these are the experiments that should index
         refls_strong = REFLS[i]
         try:
             orientAB = indexer_two_color(
@@ -108,12 +116,31 @@ def tst_index_spots():
             print("Failed to index experiment %d:" % i)
             print(error)
             continue
-        RMSDS.append( orientAB.best_Amat_rmsd)
-        CRYSTALS.append( orientAB.refined_experiments.crystals()[0])
+        RMSD.append(orientAB.best_Amat_rmsd)
+        CRYSTALS.append(orientAB.refined_experiments.crystals()[0])
 
-    from IPython import embed
-    embed()
-if __name__=="__main__":
+    assert(len(RMSD) == 2)
+    assert(all(
+        [r < 3.75 for r in RMSD]))
+
+
+def tst_make_param_list():
+
+    from cxid9114.refine import jitter_refine
+
+    param_list = jitter_refine.make_param_list(
+        crystal=crystal,
+        detector=DETECTOR,
+        beam=BEAM,
+        Nparam=20)
+
+def tst_reindex():
+    refls_strong = REFLS[2]
+    from cxid9114.sim import sim_utils
+
+
+
+if __name__ == "__main__":
     tst_find_spots()
     tst_index_spots()
     print("OK")
