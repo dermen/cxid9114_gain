@@ -1,17 +1,17 @@
 import gen_data
 import numpy as np
 from cxid9114.solvers import solvers
-from IPython import embed
 import cxid9114
 from scitbx.lstbx import normal_eqns_solving
-from IPython import embed
 from scitbx.array_family import flex
 from scitbx.lstbx import normal_eqns
 from scitbx.examples.bevington.silver import levenberg_common
 import time
 
+from IPython import embed
 
-data = gen_data.gen_data()
+
+data = gen_data.gen_data(load_hkl=False)
 guesses = gen_data.guess_data(data, perturbate=True, set_model4=False, set_model5=False, perturbate_factor=1)
 truth = gen_data.guess_data(data, perturbate=False)
 print("Loaded")
@@ -76,8 +76,6 @@ class eigen_solver(solvers.LBFGSsolver):
       self.Yobs, self.Wobs, self.Aidx, self.Gidx, self.PA, self.PB, self.LA, self.LB, self.Nhkl, self.Ns)
 
     self.helper.restart()
-    from IPython import embed
-    embed()
     _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
                non_linear_ls=self.helper,
                n_max_iterations=5000,
@@ -86,7 +84,6 @@ class eigen_solver(solvers.LBFGSsolver):
     print "End of minimization: Converged", self.helper.counter, "cycles"
     print self.helper.get_eigen_summary()
     print "Converged functional: ", self.helper.functional(self.helper.x)
-
 
 t1_eig = time.time()
 ES = eigen_solver(data=data, guess=guesses, truth=truth, lbfgs=False, conj_grad=True)

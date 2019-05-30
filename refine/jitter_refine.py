@@ -266,6 +266,40 @@ def jitter_panels(panel_ids, crystal, refls, det, beam, FF, en, data_imgs, flux,
     else:
         return out
 
+
+def make_param_list(crystal, detector, beam, Nparam, rot=0.3, cell=0.6, eq=(1,1,0),
+                    min_Ncell=20, max_Ncell=31, min_mos_spread=0.02, max_mos_spread=0.08,
+                    HARD_MOS_SPREAD=None, HARD_MOS_DOM=150):
+    crysts = [JitterFactory.jitter_crystal(
+        crystal,
+        rot_jitter_width=rot,
+        cell_jitter_fwhm=cell,
+        eq=eq) for _ in range(Nparam)]
+
+    shapes = [JitterFactory.jitter_shape(
+        min_Ncell=min_Ncell,
+        max_Ncell=max_Ncell,
+        min_mos_spread=min_mos_spread,
+        max_mos_spread=max_mos_spread) for _ in range(Nparam)]
+
+    params = []
+    for i in range(Nparam):
+        #print "parameter %d / %d " % (i + 1, Nparam)
+        P = {}
+        P['crystal'] = crysts[i]
+        P['Ncells_abc'] = shapes[i]['Ncells_abc']
+        P['mos_spread'] = shapes[i]['mos_spread']
+        if HARD_MOS_SPREAD is not None:
+            P['mos_spread'] = HARD_MOS_SPREAD
+        P['FLUX'] = [0.5e12, 0.5e12]
+        P['ENERGIES'] = [8944, 9037]
+        P['shape'] = 'gauss'
+        P['beam'] = beam
+        P['detector'] = detector
+        P['Nmos'] = HARD_MOS_DOM
+        params.append(P)
+
+
 #P = sim_utils.PatternFactory( detector=det, beam=B, panel_id=1)
 #F = scattering_factors.get_scattF( B.get_wavelength(), pdb_name="../sim/4bs7.pdb", algo='direct',dmin=1.5, ano_flag=True)
 #P.primer( C, F, 8950, 1e14)

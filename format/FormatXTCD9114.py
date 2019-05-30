@@ -3,7 +3,7 @@ from __future__ import absolute_import, division, print_function
 import numpy as np
 try:
     import psana
-    HAS_PANA = True
+    HAS_PSANA = True
 except ImportError:
     HAS_PSANA = False
 try:

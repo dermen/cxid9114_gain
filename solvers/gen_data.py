@@ -2,7 +2,7 @@ import pandas
 import numpy as np
 
 
-def gen_data(noise_lvl=0, Nshot_max = None):
+def gen_data(noise_lvl=0, Nshot_max = None, load_hkl=False):
 
     #K = 10000**2 * 1e12
     #df = pandas.read_hdf("r62_simdata2_fixed_oversamp_labeled.hdf5","data")
@@ -53,9 +53,17 @@ def gen_data(noise_lvl=0, Nshot_max = None):
 
     ydata = np.random.normal( ydata, noise_lvl)
 
+    if load_hkl:
+        data_hkl = np.load("data_hkl")
+        h = data_hkl["h"]
+        k = data_hkl["k"]
+        l = data_hkl["l"]
+    else:
+        h = k = l = None
+
     return {"Yobs": ydata, "LA":LAdata, "LB":LBdata, "IA": FAdat**2,
             "IB":FBdat**2, "G": gains, "Aidx": adata, "Gidx": gdata,
-            "PA": PAdata, "PB": PBdata}
+            "PA": PAdata, "PB": PBdata, "h": h, "k": k, "l": l}
 
 
 def guess_data(data, perturbate=True, set_model4=False, set_model5=False, perturbate_factor=.1):
