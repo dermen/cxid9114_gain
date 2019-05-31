@@ -264,30 +264,18 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
     // SET A SOLVE METHOD TO OVERRIDE THE CURRENT ONE
 
     void set_cpp_data(vecd y_obs_, vecd w_obs_,
-                    //vecd Gcurr_,
-                    //vecd IAcurr_,
-                    //vecd IBcurr_,
                     veci Aidx_,
                     veci Gidx_,
                     vecd PA_,
                     vecd PB_,
-                    vecd LA_,
-                    vecd LB_, std::size_t Nhkl_,
+                    std::size_t Nhkl_,
                     std::size_t Ns_){
         y_obs=y_obs_;
         w_obs=w_obs_;
         Aidx=Aidx_;Gidx=Gidx_;
-        //IAcurr = IAcurr_;
-        //IBcurr = IBcurr_;
-        //Gcurr = Gcurr_;
-        LA=LA_;LB=LB_;PA=PA_;PB=PB_;
+        PA=PA_;PB=PB_;
         Nhkl=Nhkl_;Ns=Ns_;
 
-        // initialize the jacobian sparse arrays
-        //for (int i=0; i < 3*y_obs.size(); i++){ // 3 parameters sampled  per measurement in this case..
-        //  jacobian_one_row_indices.push_back(0);
-        //  jacobian_one_row_data.push_back(0);
-        //  }
         }
 
     vecd fvec_callable(vecd current_values) {
@@ -299,10 +287,11 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
 
             double IAval = std::exp(current_values[i_hkl]);
             double IBval = std::exp(current_values[Nhkl +i_hkl]);
-            double Gval = std::exp(current_values[2*Nhkl + i_s]);
+            double GAval = std::exp(current_values[2*Nhkl + i_s]);
+            double GBval = std::exp(current_values[2*Nhkl + Ns + i_s]);
 
-            double y_calc = Gval * (IAval * LA[i]*PA[i]
-                                        + IBval*LB[i]*PB[i]);
+            double y_calc = GAval * IAval *PA[i]
+                                        + GBval * IBval*PB[i];
             y_diff[i] = y_obs[i] - y_calc;
           }
           return y_diff;
@@ -318,8 +307,8 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           return;
         }
 
-        veci jacobian_one_row_indices(3);
-        vecd jacobian_one_row_data(3);
+        veci jacobian_one_row_indices(4);
+        vecd jacobian_one_row_data(4);
 
         size_t* jacobian_one_row_indices_pt = &jacobian_one_row_indices[0];
         double* jacobian_one_row_data_pt = &jacobian_one_row_data[0];
@@ -332,32 +321,34 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
 
           double IAval = std::exp(current_values[i_hkl]);
           double IBval = std::exp(current_values[Nhkl +i_hkl]);
-          double Gval = std::exp(current_values[2*Nhkl + i_s]);
+          double GAval = std::exp(current_values[2*Nhkl + i_s]);
+          double GBval = std::exp(current_values[2*Nhkl + Ns + i_s]);
 
-          double Aterm = IAval*LA[ix]*PA[ix];
-          double Bterm = IBval*LB[ix]*PB[ix];
+          double Aterm = IAval*PA[ix];
+          double Bterm = IBval*PB[ix];
 
           // first derivitive of "yobs - ycalc" w.r.t. IA
-          double dIA = Gval * Aterm; //IAval * LA[ix] * PA[ix];
+          double dIA = GAval * Aterm; //IAval * LA[ix] * PA[ix];
           //jacobian_one_row_indices.push_back( i_hkl );
           //jacobian_one_row_data.push_back(dIA);
           jacobian_one_row_indices_pt[0]= i_hkl;
           jacobian_one_row_data_pt[0] = dIA;
 
           // derivitive w.r.t. IB
-          double dIB = Gval * Bterm;// IBval *LB[ix] * PB[ix];
+          double dIB = GBval * Bterm;// IBval *LB[ix] * PB[ix];
           //jacobian_one_row_indices.push_back( Nhkl+i_hkl );
           //jacobian_one_row_data.push_back(dIB);
           jacobian_one_row_indices_pt[1]= Nhkl + i_hkl;
           jacobian_one_row_data_pt[1] = dIB;
 
           // derivitive w.r.t. G
-          double dG = Gval*(Aterm + Bterm); //IAval * LA[ix] * PA[ix]
-                //+ IBval * LB[ix] * PB[ix];
-          //jacobian_one_row_indices.push_back(2*Nhkl + i_s);
-          //jacobian_one_row_data.push_back(dG);
+          double dGA = GAval*Aterm;
           jacobian_one_row_indices_pt[2]= 2*Nhkl + i_s;
-          jacobian_one_row_data_pt[2] = dG;
+          jacobian_one_row_data_pt[2] = dGA;
+
+          double dGB = GBval*Bterm;
+          jacobian_one_row_indices_pt[3]= 2*Nhkl + Ns+i_s;
+          jacobian_one_row_data_pt[3] = dGB;
 
           //add_equation(residuals[ix], jacobian_one_row.const_ref(), weights[ix]);
           add_residual(-residuals[ix], 1.0);
@@ -374,12 +365,10 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
       return result;
     }
 
-    vecd y_obs,w_obs,PA,PB,LA,LB;
+    vecd y_obs,w_obs,PA,PB;
     veci Aidx,Gidx;
     std::size_t Nhkl, n, Ns;
 
-    //veci jacobian_one_row_indices(3);
-    //vecd jacobian_one_row_data(3);
   };
 // END Sparse lev-mar tools
 
@@ -461,7 +450,7 @@ namespace boost_python {
         "set_cpp_data",
         &lsjb::set_cpp_data,
         (arg("y_obs_"), arg("w_obs"), arg("Aidx_"), arg("Gidx_"), arg("PA_"),
-         arg("PB_"), arg("LA_"), arg("LB_"), arg("Nhkl_"),
+         arg("PB_"), arg("Nhkl_"),
          arg("Ns_")) )
       ;
   }
