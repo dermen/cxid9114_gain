@@ -290,7 +290,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
             double GAval = std::exp(current_values[2*Nhkl + i_s]);
             double GBval = std::exp(current_values[2*Nhkl + Ns + i_s]);
 
-            double y_calc = GAval * IAval *PA[i]
+            double y_calc = GAval * IAval * PA[i]
                                         + GBval * IBval*PB[i];
             y_diff[i] = y_obs[i] - y_calc;
           }
