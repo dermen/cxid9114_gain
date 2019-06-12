@@ -37,8 +37,9 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
     self.reset()
     if not objective_only:
       functional = self.functional(self.x)
+      self.stored_functional.append(functional)
       print("\n\t<><><><><><>")
-      print("Functional value: %.4e" % functional)
+      print("\tFunctional value: %.4e" % functional)
       if self.truth is not None:
         functional_ideal = self.functional(self.truth)
         print("\tIdeal Functional value: %.4e" % functional_ideal)
@@ -48,8 +49,6 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
         FA = self.x[:self.Nhkl]
         FB = self.x[self.Nhkl:2*self.Nhkl]
         GA = self.x[2*self.Nhkl:2*self.Nhkl + self.Ns]
-        from IPython import embed
-        embed()
         #GB = self.x[2*self.Nhkl+self.Ns:]
         print("Max FA: %.4e   Min FA: %.4e " % (max(FA), min(FA)))
         print("Max FB: %.4e   Min FB: %.4e " % (max(FB), min(FB)))
@@ -109,6 +108,7 @@ class eigen_solver(solvers.LBFGSsolver):
     self.x_init = IA.concatenate(IB)
     self.x_init = self.x_init.concatenate(GA)
     self.x_init = self.x_init.concatenate(GB)
+
     assert (len(self.x_init) == self.Nhkl * 2 + self.Ns * 2)
 
     IAx = flex.log(self.x_init[:self.Nhkl])
@@ -137,16 +137,18 @@ class eigen_solver(solvers.LBFGSsolver):
       self.Yobs, self.Wobs, self.Aidx, self.Gidx, self.PA, self.PB, self.Nhkl, self.Ns)
 
     self.helper.restart()
-    _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
-               non_linear_ls=self.helper,
-               n_max_iterations=200,
-               track_all=True,
-               step_threshold=0.0001)
-    print "End of minimization: Converged", self.helper.counter, "cycles"
-    print self.helper.get_eigen_summary()
-    print "Converged functional: ", self.helper.functional(self.helper.x)
-
-
+    try:
+      _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
+                   non_linear_ls=self.helper,
+                   n_max_iterations=300,
+                   track_all=True,
+                   step_threshold=0.00005)
+      print "End of minimization: Converged", self.helper.counter, "cycles"
+      print self.helper.get_eigen_summary()
+      print "Converged functional: ", self.helper.functional(self.helper.x)
+    except AssertionError:
+      print("I did not converge according to setup params..")
+      pass
 
 
 def simdata_pipeline():
@@ -183,15 +185,19 @@ def realdata_pipeline():
     GEN = gen_data.gen_real_data_and_guess(gain=28)
     data = GEN['data']
     guess = GEN['guess']
-
+    truth = gen_data.gen_truth_for_data()
+    from copy import deepcopy
+    # these are not used but expected in the truth input
+    truth["GAprm"] = deepcopy(guess["GAprm"])
+    truth["GBprm"] = deepcopy(guess["GBprm"])
     t1_eig = time.time()
-    ES = eigen_solver(data=data, guess=guess, lbfgs=False, conj_grad=True, plot=True)
+    ES = eigen_solver(data=data, guess=guess, truth=truth, plot_truth=True, lbfgs=False,
+                      conj_grad=True, plot=True)
     t2_eig = time.time()
-
     np.savez("_eig_dat_res",
-                G=ES.x[:ES.Nhkl],
-                A=ES.x[ES.Nhkl:ES.Nhkl*2],
-                B=ES.x[ES.Nhkl*2:])
+                G=ES.helper.x[:ES.Nhkl],
+                A=ES.helper.x[ES.Nhkl:ES.Nhkl*2],
+                B=ES.helper.x[ES.Nhkl*2:])
     embed()
 
 if __name__ == "__main__":

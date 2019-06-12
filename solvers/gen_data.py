@@ -3,31 +3,43 @@ import numpy as np
 
 def gen_real_data_and_guess(gain=1):
     """data from CXID9114"""
-    data = np.load("rocketships/all.npz")
+    data = np.load("real_dataA.npz")
     gdata = data["gdata"]
     adata = data["adata"]
     
     ydata = data["ydata"] / gain
-    LAdata = data["LA"]  #[sel]
-    LBdata = data["LB"]  #[sel]
-    PAdata = data["PA"]  #[sel]
-    PBdata = data["PB"]  #[sel]
+    LAdata = data["LA"]
+    LBdata = data["LB"]
+    PAdata = data["PA"]
+    PBdata = data["PB"]
     ynoise = data["ynoise"]
 
-    guess = np.load("rocketships/all_guess.npz")
-    IA_guess = guess["Iprm"] / gain
-    IB_guess = guess["Iprm"] / gain
-    Ngain = guess["Gprm"].shape[0]
-    Gain_guess = np.random.uniform(1e-8, 1e-2, Ngain) #(guess["Gprm"],)
+    IA_guess = data["Iprm"] / gain
+    IB_guess = data["Iprm"] / gain
+    # TODO: consider making this better
+    Ngain = len(set(gdata))  # guess["Gprm"].shape[0]
+    GainA_guess = np.random.uniform(LAdata.min(), LAdata.max(), Ngain)
+    GainB_guess = np.random.uniform(LBdata.min(), LBdata.max(), Ngain)
+
+    GAdata = GainA_guess[gdata]
+    GBdata = GainB_guess[gdata]
 
     DATA = {"Yobs": ydata, "LA":LAdata, "LB":LBdata,
-            "Aidx": adata, "Gidx": gdata,
+            "Aidx": adata, "Gidx": gdata, "GAdata": GAdata, "GBdata": GBdata,
             "PA": PAdata, "PB": PBdata, "Ysig": ynoise}
 
-    GUESS = {"Gprm": Gain_guess, "IAprm": IA_guess,
+    GUESS = {"GAprm": GainA_guess, "GBprm": GainB_guess, "IAprm": IA_guess,
             "IBprm": IB_guess}
 
     return {"data": DATA, "guess": GUESS}
+
+
+def gen_truth_for_data():
+    data = np.load("real_dataA.npz")
+    #data = np.load("rocketships/truth_TR_synch.npz")
+    IAprm = data['IAprm']
+    IBprm = data['IBprm']
+    return {"IAprm": IAprm, "IBprm": IBprm}
 
 
 def gen_data(noise_lvl=0, Nshot_max = None, load_hkl=False):
@@ -68,7 +80,6 @@ def gen_data(noise_lvl=0, Nshot_max = None, load_hkl=False):
     PBdata = data["PBdata"][sel]
     FAdat = data["FAdat"][sel]
     FBdat = data["FVdata"][sel]  # NOTE: type in stored data table
-    adata = data["adata"][sel]
 
     # remap adata and gdata
     if Nshot_max is not None:
@@ -77,7 +88,7 @@ def gen_data(noise_lvl=0, Nshot_max = None, load_hkl=False):
         gain_remap = {g:i_g for i_g,g in enumerate(set(gdata))}
         gdata = np.array([gain_remap[g] for g in gdata])
 
-    Nmeas = len( ydata)
+    Nmeas = len(ydata)
     Namp = np.unique(adata).shape[0]
     Ngain = np.unique(gdata).shape[0]
     print "N-unknowns: 2xNhkl + 2xNgain = %d unknowns," % (2*Namp + 2*Ngain)
