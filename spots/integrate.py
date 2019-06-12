@@ -150,3 +150,68 @@ def integrate2(R, badmask, data, gain=28, fit_bg=True, zscore=8, sz=8):
 
     return signa, bg, noise, pix_per
 
+
+def integrate3(Rpanel, badmask, data, gain=28, fit_bg=True, zscore=8, sz=8):
+    """
+    get the crystal scatter, background scatter, and photon counting noise
+    for the reflections listed in the table R
+    :param R:  reflection table from a single panel
+    :param badmask: mask in numpy format, same shape as data from a single panel
+    :param data: data, shape of a single panel
+    :param gain: detector gain per photon
+    :return: 4 arrays, one for signal, background and noise, and pixel per spot
+    """
+    from dials.algorithms.shoebox import MaskCode
+    fg_code = MaskCode.Foreground.real
+    Nrefl = len(Rpanel)
+    ss_dim, fs_dim = data.shape
+
+    allspotmask = spot_utils.strong_spot_mask(Rpanel, (ss_dim, fs_dim))
+
+    signa = np.zeros(Nrefl)
+    bg = np.zeros(Nrefl)
+    noise = np.zeros_like(signa)
+    pix_per = np.zeros(Nrefl, int)
+    for i_r, refl in enumerate(Rpanel):
+
+        spotmask = refl['shoebox'].mask.as_numpy_array() & fg_code == fg_code
+        f1, f2, s1, s2, _, _ = refl['shoebox'].bbox  # fast scan and slow scan edges of bounding box
+        icent,jcent,_ = refl['xyzobs.px.value']
+
+        thisspotmask = np.zeros_like(allspotmask)
+        thisspotmask[s1:s2, f1:f2] = spotmask
+
+        i1 = int(max(icent-.5-sz, 0))
+        i2 = int(min(icent-.5+sz , fs_dim))
+        j1 = int(max(jcent-.5-sz, 0))
+        j2 = int(min(jcent-.5+sz , ss_dim))
+        sub_data = data[j1:j2, i1:i2]
+        sub_mask =  ((~allspotmask) * badmask )[j1:j2, i1:i2]
+
+         
+        sub_thisspotmask = thisspotmask[j1:j2,i1:i2]
+        Is = sub_data[sub_thisspotmask].sum()
+        
+        if fit_bg:
+            tilt, bgmask, coeff = tilting_plane(sub_data,
+                        mask=sub_mask, zscore=zscore)
+            
+            bg_fit_mask = np.logical_and(~bgmask, sub_mask)
+            m = sub_thisspotmask.sum()
+            n = bg_fit_mask.sum()
+            m2n = float(m)/float(n)  # ratio of number of background to number of strong spot pixels
+            
+            # modifuf Is according to background plane fit
+            Is = Is - tilt[sub_thisspotmask].sum()
+            # store background pix according to Leslie 99
+            Ibg = m2n*sub_data[bg_fit_mask].sum()
+        else:
+            Ibg = 0
+        
+        signa[i_r] = Is  # signal in the spot
+        bg[i_r] = Ibg  # background around the spot
+        noise[i_r] = (Is + Ibg + m2n*Ibg) / gain
+        pix_per[i_r] = thisspotmask.sum()
+
+    return signa, bg, noise, pix_per
+
