@@ -5,18 +5,19 @@ import cxid9114
 from itertools import izip
 from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import lsmr
-from libtbx.test_utils import approx_equal
-
-
 
 import time
 from scitbx.array_family import flex
 import numpy as np
+
+
 class LBFGSsolver(object):
-    def __init__(self, data, guess, truth, lbfgs=True):
-        self.Gprm_truth = flex.double(np.ascontiguousarray(truth["Gprm"]))
-        self.IAprm_truth = flex.double(np.ascontiguousarray(truth["IAprm"]))
-        self.IBprm_truth = flex.double(np.ascontiguousarray(truth["IBprm"]))
+    def __init__(self, data, guess, truth=None, lbfgs=True):
+        self.Gprm_truth = self.IAprm_truth = self.IBprm_truth = None  # we might not know the truth
+        if truth is not None:
+            self.Gprm_truth = flex.double(np.ascontiguousarray(truth["Gprm"]))
+            self.IAprm_truth = flex.double(np.ascontiguousarray(truth["IAprm"]))
+            self.IBprm_truth = flex.double(np.ascontiguousarray(truth["IBprm"]))
 
 
         self.stored_functional = []
@@ -26,8 +27,8 @@ class LBFGSsolver(object):
         self.LA = flex.double(np.ascontiguousarray(data["LA"]))# NOTE expanded
         self.LB = flex.double(np.ascontiguousarray(data["LB"]))# NOTE expanded
 
-        self.Nhkl = len(self.IAprm_truth)
-        self.Ns = len(self.Gprm_truth)
+        self.Nhkl = len(set(data['Aidx']))  # self.IAprm_truth)
+        self.Ns = len(set(data['Gidx']))  ##self.Gprm_truth)
         self.Nmeas = len(self.Yobs)
 
         self.Aidx = flex.size_t(np.ascontiguousarray(data["Aidx"]))
@@ -60,6 +61,21 @@ class LBFGSsolver(object):
         resid_sq = self.resid * self.resid
         return .5 * flex.sum(resid_sq)
 
+    def ideal_functional(self):
+        try:
+            _ = self.IAprm_truth
+        except AttributeError as error:
+            print(error)
+            print("No stored truth values to compute ideal funcitonal")
+            return
+        #IAcurr, IBcurr, Gcurr = self.unpack()
+        self.resid = self.Yobs - self.Gprm_truth * \
+                     ( self.IAprm_truth * self.LA * self.PA + self.IBprm_truth*self.LB*self.PB )
+        resid_sq = self.resid * self.resid
+        return .5 * flex.sum(resid_sq)
+
+
+
     def gradients(self):
         IAcurr, IBcurr, Gcurr = self.unpack()
         grad_vec = flex.double(self.n)
@@ -88,8 +104,9 @@ class LBFGSsolver(object):
 class LogIsolver(LBFGSsolver):
     def __init__(self, *args, **kwargs):
         LBFGSsolver.__init__(self, *args, **kwargs)
-        self.IAprm_truth = flex.log(self.IAprm_truth)
-        self.IBprm_truth = flex.log(self.IBprm_truth)
+        if self.IAprm_truth is not None:
+            self.IAprm_truth = flex.log(self.IAprm_truth)
+            self.IBprm_truth = flex.log(self.IBprm_truth)
         IAx = flex.log(self.x[:self.Nhkl])
         IBx = flex.log(self.x[self.Nhkl:2*self.Nhkl])
         Gx = self.x[2*self.Nhkl:]
@@ -144,14 +161,15 @@ from scitbx.lbfgs.tst_curvatures import lbfgs_with_curvatures_mix_in
 class LogIsolverCurve(lbfgs_with_curvatures_mix_in, LBFGSsolver):
     def __init__(self, use_curvatures=True, *args, **kwargs):
         LBFGSsolver.__init__(self, *args, **kwargs)
-        self.IAprm_truth = flex.log(self.IAprm_truth)
-        self.IBprm_truth = flex.log(self.IBprm_truth)
-        #self.Gprm_truth = flex.log(self.Gprm_truth)
+        if self.IAprm_truth is not None:
+            self.IAprm_truth = flex.log(self.IAprm_truth)
+            self.IBprm_truth = flex.log(self.IBprm_truth)
+            self.Gprm_truth = flex.log(self.Gprm_truth)
 
         IAx = flex.log(self.x[:self.Nhkl])
         IBx = flex.log(self.x[self.Nhkl:2*self.Nhkl])
-        Gx = self.x[2*self.Nhkl:]
-        #Gx = flex.log(self.x[2*self.Nhkl:])
+        #Gx = self.x[2*self.Nhkl:]
+        Gx = flex.log(self.x[2*self.Nhkl:])
         self.x = IAx.concatenate(IBx)
         self.x = self.x.concatenate(Gx)
 
