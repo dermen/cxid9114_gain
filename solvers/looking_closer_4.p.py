@@ -7,7 +7,7 @@ import numpy as np
 from cxid9114.sim import scattering_factors
 from cxid9114.parameters import ENERGY_CONV
 import pylab as plt
-
+from count_unknowns import unknowns
 import sys
 
 Hidx = int(sys.argv[1]) #107
@@ -32,82 +32,43 @@ def fhkl2(x, DF, Nl, Nhkl, Nscale, gain, weights=False):
     IA = param_hklA[DF.hkl_loc_id]
     IB = param_hklB[DF.hkl_loc_id]
     a,b = param_l
-    #Yobs = DF.D # / gain
-    #Ymodel = scale*( a*DF.LPA*IA + b*DF.LPB*IB)
-    #resid = (Yobs - Ymodel)**2
 
-    resid = (DF.D - scale * (a * DF.LPA * IA + b * DF.LPB * IB)) ** 2
-    #from IPython import embed
-    #embed()
+    resid = DF.eval("(D - @scale * (@a * LPA * @IA + @b * LPB * @IB))**2", engine="numexpr")
+    #resid = (DF.D - scale * (a * DF.LPA * IA + b * DF.LPB * IB)) ** 2
+    
     if weights:
         return np.sum(resid / DF.Dnoise)
     else:
         return np.sum(resid)
 
 df = pandas.read_pickle('rocketships/all_the_goodies_wReso_and_anom_corrected.pkl')
-idx = df.duplicated()
-df = df.loc[~idx]
-gb = df.groupby(['hAnom','kAnom','lAnom'])
-H = gb.groups.keys()
-d = gb.get_group(H[Hidx])
-pan_ids = d.pid.unique()
-df_pan = df.loc[df.pid.isin( pan_ids)]
-gb_pan_shots = df_pan.groupby(['shot_idx', 'run'])
 
-gbd = d.groupby(['shot_idx', 'run'])
-shot_id = gbd.groups.keys()
+DF = df.query("reso > 3.45 and reso < 3.5")
+#DF = unknowns(df, 1, 3.45,3.46)
 
-print ("Finding others")
-others = []
-for sid in shot_id:
-    d_sh = gb_pan_shots.get_group(sid)
-    others.append( d_sh)
-df_others = pandas.concat(others)
-print "Found %d others" % len(df_others)
+DF.reset_index(inplace=True)
 
-d_res = d.reso.values[0]
+DF_hkl = DF[['hAnom','kAnom', 'lAnom']].values
+IA = [ abs(FAmap[tuple(h)])**2 for h in DF_hkl]
+IB = [ abs(FBmap[tuple(h)])**2 for h in DF_hkl]
+DF["IB"] = IB
+DF["IA"] = IA
+DF['hkl_loc'] = ["h=%d;k=%d;l=%d" % (h,k,l) for h,k,l in DF[['hAnom','kAnom','lAnom']].values]
+hkl_loc_map = {h:i for i,h in enumerate(DF.hkl_loc.unique())}
+DF['hkl_loc_id'] = [hkl_loc_map[s] for s in DF.hkl_loc]
 
-Npar = 1
-Nmeas = 0
-expand = 0
-max_try = 10
-ntry = 0
-while Npar > Nmeas:
-    if ntry == max_try:
-        print("Cannot determine subset problem, infinite solutions could exist")
-        break
-    resmin = d_res-(0.03 + expand)
-    resmax = d_res+(0.03 + expand)
-    df_others_res = df_others.query("reso > %f and reso < %f" % (resmin, resmax))
-    H_others_res = df_others_res.groupby(['hAnom','kAnom','lAnom']).groups.keys()
+DF['shot_loc'] = ["shot=%d;run=%d" % (s, r) for s, r in DF[['shot_idx','run']].values]
+shot_loc_map = {pid:i for i, pid in enumerate(DF.shot_loc.unique())}
+DF['shot_loc_id'] = [shot_loc_map[s] for s in DF.shot_loc]
 
-    DF = pandas.concat( (d,df_others_res))
-    DF.reset_index(inplace=True)
-
-
-    DF_hkl = DF[['hAnom','kAnom', 'lAnom']].values
-    IA = [ abs(FAmap[tuple(h)])**2 for h in DF_hkl]
-    IB = [ abs(FBmap[tuple(h)])**2 for h in DF_hkl]
-    DF["IB"] = IB
-    DF["IA"] = IA
-    DF['hkl_loc'] = ["h=%d;k=%d;l=%d" % (h,k,l) for h,k,l in DF[['hAnom','kAnom','lAnom']].values]
-    hkl_loc_map = {h:i for i,h in enumerate(DF.hkl_loc.unique())}
-    DF['hkl_loc_id'] = [hkl_loc_map[s] for s in DF.hkl_loc]
-
-    DF['shot_loc'] = ["shot=%d;run=%d" % (s, r) for s, r in DF[['shot_idx','run']].values]
-    shot_loc_map = {pid:i for i, pid in enumerate(DF.shot_loc.unique())}
-    DF['shot_loc_id'] = [shot_loc_map[s] for s in DF.shot_loc]
-
-    GB = DF.groupby(['hAnom','kAnom','lAnom'])
-    HH = GB.groups.keys()
-    Nscale = len(DF.shot_loc_id.unique())
-    Nhkl = len(HH)
-    Npar = 2 + Nhkl*2 + Nscale
-    Nmeas = len(DF)
-    print("Number of unknowns=%d; Number of equations=%d"% (Npar, Nmeas))
-    print
-    expand += 0.005
-    ntry += 1
+GB = DF.groupby(['hAnom','kAnom','lAnom'])
+HH = GB.groups.keys()
+Nscale = len(DF.shot_loc_id.unique())
+Nhkl = len(HH)
+Npar = 2 + Nhkl*2 + Nscale
+Nmeas = len(DF)
+print("Number of unknowns=%d; Number of equations=%d"% (Npar, Nmeas))
+print
 
 param_array2 = np.zeros(Npar )
 param_array2[:2] = 2
@@ -138,7 +99,7 @@ param_array2[2+Nhkl*2:] = 3e9  # seems like good guess from looking at data
 # lots of wiggle room for the parameters..
 # these are log10:
 #         channel flux        I_hkl           pattern scale
-bounds2 = [(-2,12)]*2 + [(-1,18)]*Nhkl*2 + [(-1, 17)]*Nscale
+bounds2 = [(-10,12)]*2 + [(-1,18)]*Nhkl*2 + [(-10, 17)]*Nscale
 
 
 # make the constraints
@@ -164,12 +125,12 @@ DF["LPA"] = DF.LA*DF.PA
 DF["LPB"] = DF.LB*DF.PB
 
 print "Minimizing without weights"
-out_hkl2_C = minimize(fhkl2, 
-    x0=np.log10(param_array2), 
+out_hkl2_C = minimize(fhkl2,
+    x0=np.log10(param_array2),
     args=(DF,2,Nhkl, Nscale,28, False),
-    bounds=bounds2, 
-    constraints=[MinC, MaxC], 
-    method="trust-constr", options={"maxiter" : 2000, 'verbose':2})
+    bounds=bounds2,
+    constraints=[MinC, MaxC],
+    method="trust-constr", options={"maxiter" : 2, 'verbose':2})
 
 exit()
 
@@ -177,11 +138,11 @@ IA_final2C = out_hkl2_C.x[2:2+Nhkl]
 IB_final2C = out_hkl2_C.x[2+Nhkl: 2+2*Nhkl]
 
 print "Minimizing with weights"
-out_hkl2_CW = minimize(fhkl2, 
-    x0=np.log10(param_array2), 
+out_hkl2_CW = minimize(fhkl2,
+    x0=np.log10(param_array2),
     args=(DF,2,Nhkl, Nscale,28, True),
-    bounds=bounds2, 
-    constraints=[MinC, MaxC], 
+    bounds=bounds2,
+    constraints=[MinC, MaxC],
     method="trust-constr" ,options={"maxiter" : 2000, 'verbose':2})
 
 IA_final2CW = out_hkl2_CW.x[2:2+Nhkl]

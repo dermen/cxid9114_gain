@@ -9,7 +9,8 @@ def single_to_asu(h, ano=True):
     sym = crystal.symmetry(unit_cell=(79, 79, 38, 90, 90, 90),
                            space_group=sg)
     idx = flex.miller_index((h,))
-    mill_set = miller.set(crystal_symmetry=sym, indices=idx, anomalous_flag=ano)
+    mill_set = miller.set(crystal_symmetry=sym, indices=idx,
+                        anomalous_flag=ano)
     mill_asu = mill_set.map_to_asu().indices()
     return mill_asu[0]
 
