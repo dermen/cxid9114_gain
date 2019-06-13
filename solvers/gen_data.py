@@ -16,19 +16,17 @@ def gen_real_data_and_guess(gain=1):
 
     IA_guess = data["Iprm"] / gain
     IB_guess = data["Iprm"] / gain
+
     # TODO: consider making this better
     Ngain = len(set(gdata))  # guess["Gprm"].shape[0]
-    GainA_guess = np.random.uniform(LAdata.min(), LAdata.max(), Ngain)
-    GainB_guess = np.random.uniform(LBdata.min(), LBdata.max(), Ngain)
 
-    GAdata = GainA_guess[gdata]
-    GBdata = GainB_guess[gdata]
+    Gain_guess = np.ones(Ngain)*3e9
 
     DATA = {"Yobs": ydata, "LA":LAdata, "LB":LBdata,
-            "Aidx": adata, "Gidx": gdata, "GAdata": GAdata, "GBdata": GBdata,
+            "Aidx": adata, "Gidx": gdata,
             "PA": PAdata, "PB": PBdata, "Ysig": ynoise}
 
-    GUESS = {"GAprm": GainA_guess, "GBprm": GainB_guess, "IAprm": IA_guess,
+    GUESS = {"Gprm": Gain_guess, "IAprm": IA_guess,
             "IBprm": IB_guess}
 
     return {"data": DATA, "guess": GUESS}

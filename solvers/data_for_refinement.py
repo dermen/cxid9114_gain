@@ -5,9 +5,18 @@ from itertools import izip
 df = pandas.read_pickle(
     "rocketships/all_the_goodies_wReso_and_anom_corrected.pkl")
 
+# somehow duplicates ended up in dataframe, need to figure out why..
+df = df.loc[~df.duplicated()].reset_index()
+
 Kfact = 1e20
 
-df = df.query("reso > 2.1")
+df = df.query("reso > 2.4")
+
+
+from cxid9114.utils import is_outlier
+out_thresh=45
+df = df.loc[~is_outlier(df.Dnoise,out_thresh)]
+
 
 hkl = tuple(map(tuple,  df[['hAnom', 'kAnom', 'lAnom']].values.astype(int)))
 hkl_map = {h: i for i, h in enumerate(set(hkl))}

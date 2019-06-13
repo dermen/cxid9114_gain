@@ -20,6 +20,13 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
     self.stored_functional = []
     self.truth = truth
     self.plot = plot
+
+    if self.truth is not None:
+        self.FA_truth = self.truth[:self.Nhkl]
+        self.FB_truth = self.truth[self.Nhkl:2*self.Nhkl]
+        self.minRatio_tru = min(self.FA_truth / self.FB_truth)
+        self.maxRatio_tru = max(self.FA_truth / self.FB_truth)
+
     if plot:
 
       self.fig, (self.ax1,self.ax2,self.ax3) = plt.subplots(
@@ -48,38 +55,47 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
       if self.Nhkl is not None and self.Ns is not None:
         FA = self.x[:self.Nhkl]
         FB = self.x[self.Nhkl:2*self.Nhkl]
-        GA = self.x[2*self.Nhkl:2*self.Nhkl + self.Ns]
-        #GB = self.x[2*self.Nhkl+self.Ns:]
+
+        minRatio = min(FA / FB)
+        maxRatio = max(FA / FB)
+        if self.truth is not None:
+            print "Truth MinRatio: %.4f ; MinRatio %.4f" % (self.minRatio_tru, minRatio)
+            print "Truth MaxRatio: %.4f ; MaxRatio %.4f" % (self.maxRatio_tru, maxRatio)
+
+        G = self.x[2*self.Nhkl:2*self.Nhkl + self.Ns]
+        a = self.x[2*self.Nhkl + self.Ns]
+        b = self.x[2*self.Nhkl + self.Ns+1]
         print("Max FA: %.4e   Min FA: %.4e " % (max(FA), min(FA)))
         print("Max FB: %.4e   Min FB: %.4e " % (max(FB), min(FB)))
-        print("Max ScaleFactorA: %.2e   Min ScaleFactorA: %.2e " % (max(GA), min(GA)))
+        print("Max ScaleFactorA: %.2e   Min ScaleFactorA: %.2e " % (max(G), min(G)))
+        print ("a factor: %f " %a)
+        print ("b factor: %f " %b)
         if self.plot:
             self.ax1.clear()
             self.ax2.clear()
             self.ax3.clear()
             self.ax1.set_xlabel("log |FA|^2")
             self.ax2.set_xlabel("log |FB|^2")
-            self.ax3.set_xlabel("log |Scale factorA|")
+            self.ax3.set_xlabel("log |Scale factor|")
             FAmax = max(FA)
             FAmin = min(FA)
             FBmax = max(FB)
             FBmin = min(FB)
-            GAmax = max(GA)
-            GAmin = min(GA)
+            Gmax = max(G)
+            Gmin = min(G)
             FArng = np.linspace(FAmin, FAmax, 150)
             FBrng = np.linspace(FBmin, FBmax, 150)
-            GArng = np.linspace(GAmin, GAmax, 150)
+            Grng = np.linspace(Gmin, Gmax, 150)
             self.ax1.hist(FA,bins=FArng, log=True)
             self.ax2.hist(FB, bins=FBrng, log=True)
-            self.ax3.hist(GA, bins=GArng, log=True)
+            self.ax3.hist(G, bins=Grng, log=True)
             self.fig.canvas.draw()
             if self.truth is not None:
                 self.f2_ax.clear()
-                self.f2_ax.plot(self.truth[:len(FA)], FA, '.', ms=0.2)
+                self.f2_ax.plot(self.FA_truth, FA, '.', ms=0.2)
                 self.f2_ax.plot(FArng, FArng, color='C1', lw=0.5, ls='--')
                 self.fig2.canvas.draw()
             plt.pause(0.3)
-
 
       self.stored_functional.append(functional)
     self.access_cpp_build_up_directly_eigen_eqn(objective_only, current_values = self.x)
@@ -95,30 +111,28 @@ class eigen_solver(solvers.LBFGSsolver):
     if self.IAprm_truth is not None:
         self.IAprm_truth = flex.log(self.IAprm_truth)
         self.IBprm_truth = flex.log(self.IBprm_truth)
-        self.GAprm_truth = flex.log(self.GAprm_truth)
-        self.GBprm_truth = flex.log(self.GBprm_truth)
+        self.Gprm_truth = flex.log(self.Gprm_truth)
         self.x_truth = self.IAprm_truth.concatenate(self.IBprm_truth)
-        self.x_truth = self.x_truth.concatenate(self.GAprm_truth)
-        self.x_truth = self.x_truth.concatenate(self.GBprm_truth)
+        self.x_truth = self.x_truth.concatenate(self.Gprm_truth)
+        self.x_truth = self.x_truth.concatenate(flex.double([1,1]))  # add in dummie a,b
 
     IA = flex.double(np.ascontiguousarray(self.guess["IAprm"]))
     IB = flex.double(np.ascontiguousarray(self.guess["IBprm"]))
-    GA = flex.double(np.ascontiguousarray(self.guess["GAprm"]))
-    GB = flex.double(np.ascontiguousarray(self.guess["GBprm"]))
+    G = flex.double(np.ascontiguousarray(self.guess["Gprm"]))
     self.x_init = IA.concatenate(IB)
-    self.x_init = self.x_init.concatenate(GA)
-    self.x_init = self.x_init.concatenate(GB)
+    self.x_init = self.x_init.concatenate(G)
+    self.x_init = self.x_init.concatenate(flex.double([1,1]))
 
-    assert (len(self.x_init) == self.Nhkl * 2 + self.Ns * 2)
+    assert (len(self.x_init) == self.Nhkl * 2 + self.Ns + 2)
 
     IAx = flex.log(self.x_init[:self.Nhkl])
     IBx = flex.log(self.x_init[self.Nhkl:2 * self.Nhkl])
-    GAx = flex.log(self.x_init[2 * self.Nhkl: 2*self.Nhkl + self.Ns])
-    GBx = flex.log(self.x_init[2 * self.Nhkl + self.Ns:])
+    Gx = flex.log(self.x_init[2 * self.Nhkl: 2*self.Nhkl + self.Ns])
+    abx = flex.log(self.x_init[ 2*self.Nhkl+self.Ns:])
 
     self.x_init = IAx.concatenate(IBx)
-    self.x_init = self.x_init.concatenate(GAx)
-    self.x_init = self.x_init.concatenate(GBx)
+    self.x_init = self.x_init.concatenate(Gx)
+    self.x_init = self.x_init.concatenate(abx)
 
     self.counter = 0
 
@@ -134,7 +148,7 @@ class eigen_solver(solvers.LBFGSsolver):
     self.helper = eigen_helper(initial_estimates=self.x_init, Nhkl=self.Nhkl, Ns=self.Ns,plot=plot, truth=truth)
     self.helper.eigen_wrapper.conj_grad = conj_grad
     self.helper.set_cpp_data(
-      self.Yobs, self.Wobs, self.Aidx, self.Gidx, self.PA, self.PB, self.Nhkl, self.Ns)
+      self.Yobs, self.Wobs, self.Aidx, self.Gidx, self.PA, self.PB, self.LA, self.LB, self.Nhkl, self.Ns)
 
     self.helper.restart()
     try:
@@ -146,7 +160,7 @@ class eigen_solver(solvers.LBFGSsolver):
       print "End of minimization: Converged", self.helper.counter, "cycles"
       print self.helper.get_eigen_summary()
       print "Converged functional: ", self.helper.functional(self.helper.x)
-    except AssertionError:
+    except (AssertionError,KeyboardInterrupt):
       print("I did not converge according to setup params..")
       pass
 
@@ -186,10 +200,11 @@ def realdata_pipeline():
     data = GEN['data']
     guess = GEN['guess']
     truth = gen_data.gen_truth_for_data()
+    from IPython import embed
+    embed()
     from copy import deepcopy
     # these are not used but expected in the truth input
-    truth["GAprm"] = deepcopy(guess["GAprm"])
-    truth["GBprm"] = deepcopy(guess["GBprm"])
+    truth["Gprm"] = deepcopy(guess["Gprm"])
     t1_eig = time.time()
     ES = eigen_solver(data=data, guess=guess, truth=truth, plot_truth=True, lbfgs=False,
                       conj_grad=True, plot=True)

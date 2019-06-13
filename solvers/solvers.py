@@ -13,20 +13,19 @@ import numpy as np
 
 class LBFGSsolver(object):
     def __init__(self, data, guess, truth=None, lbfgs=True):
-        self.GAprm_truth = self.GBprm_truth = self.IAprm_truth = self.IBprm_truth = None  # we might not know the truth
+
+        self.Gprm_truth = self.IAprm_truth = self.IBprm_truth = None  # we might not know the truth
         if truth is not None:
-            self.GAprm_truth = flex.double(np.ascontiguousarray(truth["GAprm"]))
-            self.GBprm_truth = flex.double(np.ascontiguousarray(truth["GBprm"]))
+            self.Gprm_truth = flex.double(np.ascontiguousarray(truth["Gprm"]))
             self.IAprm_truth = flex.double(np.ascontiguousarray(truth["IAprm"]))
             self.IBprm_truth = flex.double(np.ascontiguousarray(truth["IBprm"]))
-
 
         self.stored_functional = []
         self.Yobs = flex.double(np.ascontiguousarray(data["Yobs"]))  # NOTE expanded
         self.PA = flex.double(np.ascontiguousarray(data["PA"]))# NOTE expanded
         self.PB = flex.double(np.ascontiguousarray(data["PB"]))# NOTE expanded
-        #self.LA = flex.double(np.ascontiguousarray(data["LA"]))# NOTE expanded
-        #self.LB = flex.double(np.ascontiguousarray(data["LB"]))# NOTE expanded
+        self.LA = flex.double(np.ascontiguousarray(data["LA"]))# NOTE expanded
+        self.LB = flex.double(np.ascontiguousarray(data["LB"]))# NOTE expanded
 
         self.Nhkl = len(set(data['Aidx']))
         self.Ns = len(set(data['Gidx']))
