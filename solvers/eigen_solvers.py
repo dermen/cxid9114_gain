@@ -20,7 +20,7 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
     self.stored_functional = []
     self.truth = truth
     self.plot = plot
-
+    self.n_iters = 0
     if self.truth is not None:
         self.FA_truth = self.truth[:self.Nhkl]
         self.FB_truth = self.truth[self.Nhkl:2*self.Nhkl]
@@ -46,6 +46,7 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
       functional = self.functional(self.x)
       self.stored_functional.append(functional)
       print("\n\t<><><><><><>")
+      print("Begin iteration %d" % self.n_iters)
       print("\tFunctional value: %.4e" % functional)
       if self.truth is not None:
         functional_ideal = self.functional(self.truth)
@@ -97,7 +98,12 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
                 self.fig2.canvas.draw()
             plt.pause(0.3)
 
+      np.savez_compressed("_autogen_niter%d" % self.n_iters,
+        x=self.x, Nhkl=self.Nhkl, Nscale=self.Ns, minRatio=minRatio,
+        maxRatio=maxRatio, functional=functional)
       self.stored_functional.append(functional)
+      self.n_iters += 1
+
     self.access_cpp_build_up_directly_eigen_eqn(objective_only, current_values = self.x)
 
 
