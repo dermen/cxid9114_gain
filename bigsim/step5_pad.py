@@ -1,39 +1,45 @@
+
 from __future__ import division,print_function
-from six.moves import range
-from six.moves import StringIO
+
+from six.moves import range, StringIO
+from six.moves import cPickle as pickle
+import os
+import h5py
+import math
+import sys
+import numpy as np
+from IPython import embed
+
+import scitbx
 from scitbx.array_family import flex
 from scitbx.matrix import sqr,col
 from simtbx.nanoBragg import shapetype
 from simtbx.nanoBragg import nanoBragg
 import libtbx.load_env # possibly implicit
-from cctbx import crystal
 from libtbx.development.timers import Profiler
-import math
-from cctbx import crystal_orientation
-from six.moves import cPickle as pickle
-import scitbx
-import sys
+from cctbx import crystal,crystal_orientation
 from LS49.sim.step4_pad import microcrystal
-from LS49.sim.util_fmodel import gen_fmodel
-import os
 from cxid9114 import utils
-import h5py
+from cxid9114.parameters import ENERGY_CONV
+from cxid9114.bigsim import sim_spectra
+
 
 # GLOBALS
+# --------------------
 sample_thick_mm = 0.005  # 50 micron GDVN nozzle makes a ~5ish micron jet
 air_thick_mm = 0  # mostly vacuum but can make a helium layer of 1 micron maybe.. 
-flux=2e11
-add_spots_algorithm = "NKS"
+flux_ave=2e11
+add_spots_algorithm = "cuda" #"JH" #"NKS"
 big_data = "." # directory location for reference files
-detpix_slowfast = (1800,1800)
+detpixels_slowfast = (1800,1800)
 pixsize_mm=0.11
 distance_mm = 125
 offset_adu=10
-mos_spread_deg=0.05
-mos_doms=25
-beam_size_mm = 0.001
+mos_spread_deg=0.015
+mos_doms=50
+beam_size_mm = 0.002
 exposure_s = 1
-
+verbose=0
 # --------------------
 
 def full_path(filename):
@@ -51,7 +57,8 @@ def write_safe(fname):
 def channel_pixels(wavelength_A,flux, N, UMAT_nm, Amatrix_rot, rank, 
                 sfall_channel):
 
-  SIM = nanoBragg(detpixels_slowfast=detpix_slowfast,pixel_size_mm=pixsize_mm,Ncells_abc=(N,N,N),
+  N = 95
+  SIM = nanoBragg(detpixels_slowfast=detpixels_slowfast,pixel_size_mm=pixsize_mm,Ncells_abc=(N,N,N),
     wavelength_A=wavelength_A,verbose=verbose)
   SIM.adc_offset_adu = offset_adu
   SIM.mosaic_spread_deg = mos_spread_deg # interpreted by UMAT_nm as a half-width stddev
@@ -65,9 +72,9 @@ def channel_pixels(wavelength_A,flux, N, UMAT_nm, Amatrix_rot, rank,
   SIM.wavelength_A = wavelength_A
   SIM.polarization=1
   SIM.default_F=0
-  SIM.Fhkl=sfall_channel
+  SIM.Fhkl=sfall_channel.amplitudes()
   SIM.Amatrix_RUB = Amatrix_rot
-  SIM.xtal_shape=shapetype.Gauss # both crystal & RLP are Gaussian
+  SIM.xtal_shape=shapetype.Tophat #Gauss # both crystal & RLP are Gaussian
   SIM.progress_meter=True # False
   # flux is always in photons/s
   SIM.flux=flux
@@ -90,7 +97,7 @@ def channel_pixels(wavelength_A,flux, N, UMAT_nm, Amatrix_rot, rank,
   del P
   return SIM
 
-def run_sim2smv(prefix,crystal,spectra,rotation,rank,quick=False,save_bragg=False):
+def run_sim2smv(prefix,crystal,spectra,rotation,rank, sfall_main, quick=False,save_bragg=False):
   smv_fileout = prefix + ".img"
   if not quick:
     if not write_safe(smv_fileout):
@@ -99,18 +106,19 @@ def run_sim2smv(prefix,crystal,spectra,rotation,rank,quick=False,save_bragg=Fals
 
   direct_algo_res_limit = 1.7
 
+  #embed()
   wavlen, flux, wavelength_A = next(spectra) # list of lambdas, list of fluxes, average wavelength
   assert wavelength_A > 0
+  assert (len(wavlen)==len(flux)==len(sfall_main))
   if quick:
     wavlen = flex.double([wavelength_A]);
     flux = flex.double([flex.sum(flux)])
     print("Quick sim, lambda=%f, flux=%f"%(wavelength_A,flux[0]))
 
-  sfall_main = GF.get_amplitudes()
   
   # use crystal structure to initialize Fhkl array
-  sfall_main.show_summary(prefix = "Amplitudes used ")
-  N = crystal.number_of_cells(sfall_main.unit_cell())
+  sfall_main[0].show_summary(prefix = "Amplitudes used ")
+  N = crystal.number_of_cells(sfall_main[0].unit_cell())
 
   SIM = nanoBragg(detpixels_slowfast=detpixels_slowfast,
         pixel_size_mm=pixsize_mm,Ncells_abc=(N,N,N),
@@ -142,9 +150,9 @@ def run_sim2smv(prefix,crystal,spectra,rotation,rank,quick=False,save_bragg=Fals
   print("seed=",SIM.seed)
   print("calib_seed=",SIM.calib_seed)
   print("missets_deg =", SIM.missets_deg)
-  SIM.Fhkl=sfall_main
+  SIM.Fhkl=sfall_main[0].amplitudes()
   print("Determinant",rotation.determinant())
-  Amatrix_rot = (rotation * sqr(sfall_main.unit_cell().orthogonalization_matrix())).transpose()
+  Amatrix_rot = (rotation * sqr(sfall_main[0].unit_cell().orthogonalization_matrix())).transpose()
   print("RAND_ORI", prefix, end=' ')
   for i in Amatrix_rot: print(i, end=' ')
   print()
@@ -157,10 +165,10 @@ def run_sim2smv(prefix,crystal,spectra,rotation,rank,quick=False,save_bragg=Fals
   Ori = crystal_orientation.crystal_orientation(Amat, crystal_orientation.basis_type.reciprocal)
   print("Python unit cell from SIM state",Ori.unit_cell())
 
-  SIM.xtal_shape=shapetype.Gauss 
+  SIM.xtal_shape=shapetype.Tophat #.Gauss 
   SIM.progress_meter=False
   SIM.show_params()
-  SIM.flux=flux
+  SIM.flux=flux_ave
   SIM.exposure_s=exposure_s 
   SIM.beamsize_mm=beam_size_mm 
   temp=SIM.Ncells_abc
@@ -230,13 +238,12 @@ def run_sim2smv(prefix,crystal,spectra,rotation,rank,quick=False,save_bragg=Fals
   # amplify spot signal to simulate physical crystal of 4000x larger: 100 um (64e9 x the volume)
   print(crystal.domains_per_crystal)
   SIM.raw_pixels *= crystal.domains_per_crystal; # must calculate the correct scale!
-
   for x in range(len(flux)):
     P = Profiler("nanoBragg Python and C++ rank %d"%(rank))
 
     print("+++++++++++++++++++++++++++++++++++++++ Wavelength",x)
-    CH = channel_pixels(wavlen[x], flux[x], N, UMAT_nm, Amatrix_rot, rank, sf_all[x])
-    SIM.raw_pixels += CH.raw_pixels * crystal.domains_per_crystal
+    CH = channel_pixels(wavlen[x], flux[x], N, UMAT_nm, Amatrix_rot, rank, sfall_main[x])
+    SIM.raw_pixels += CH.raw_pixels #* crystal.domains_per_crystal
     CH.free_all()
 
     del P
@@ -252,7 +259,7 @@ def run_sim2smv(prefix,crystal,spectra,rotation,rank,quick=False,save_bragg=Fals
   SIM.amorphous_sample_thick_mm = sample_thick_mm 
   SIM.amorphous_density_gcm3 = 1
   SIM.amorphous_molecular_weight_Da = 18
-  SIM.flux=flux 
+  SIM.flux=flux_ave 
   SIM.beamsize_mm=beam_size_mm
   SIM.exposure_s=exposure_s
   SIM.add_background()
@@ -310,19 +317,21 @@ def tst_one(quick=False,prefix="step5",save_bragg=False):
   
   spec_file =  h5py.File(full_path("test_data.h5"), "r")
   idx = 0
-  wave_chans = spec_file["energy_bins"][()]
-  spec = spec_file["raw_spec"][idx]
+  en_chans = spec_file["energy_bins"][()]
+  wave_chans = ENERGY_CONV/en_chans
+  spec = spec_file["hist_spec"][idx]
   C_ori = sqr(spec_file["Umats"][idx])
-  wavelength_A = np.mean(wave_change)
-
-  C = microcrystal(Deff_A = 1000, length_um = 2., beam_diameter_um = beam_size_mm*1000) 
+  wavelength_A = np.mean(wave_chans)
+  sfall = sim_spectra.load_spectra(full_path("test_sfall.h5"))
+  C = microcrystal(Deff_A = 800, length_um = 0.9, beam_diameter_um = beam_size_mm*1000) 
  
-  iterator = iter([wave_chans, spec, wavelength_A ])
-      
-  run_sim2smv(prefix = "tst_one_test_data_%d" % idx,
+  iterator = iter([(wave_chans, spec, wavelength_A)])
+  
+  run_sim2smv(prefix = "tst_one_test_data_%06d" % idx,
             crystal = C,
             spectra=iterator,
-            rotation=rand_ori,
+            sfall_main=sfall,
+            rotation=C_ori,
             quick=False,
             rank=0,
             save_bragg=True)

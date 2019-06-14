@@ -52,14 +52,17 @@ def Yb_f0_at_reso(reso):
     cman_data = refdata.get_cmann_form_factors(cman_parm, Qmag)
     return cman_data.values()[0]
 
-def get_scattF(wavelen_A, pdb_name, algo, dmin, ano_flag):
+def get_scattF(wavelen_A, pdb_name, algo, dmin, ano_flag, load_lines=True):
     """
     mostly borrowed from tst_nanoBragg_basic.py
     """
 
-    pdblines = open(pdb_name, "r").readlines()
     from iotbx import pdb
-    pdb_in = pdb.input(source_info=None, lines=pdblines)
+    if load_lines:
+        pdblines = open(pdb_name, "r").readlines()
+        pdb_in = pdb.input(source_info=None, lines=pdblines)
+    else:
+        pdb_in = pdb.input(pdb_name)
     xray_structure = pdb_in.xray_structure_simple()
     scatts = xray_structure.scatterers()
 
