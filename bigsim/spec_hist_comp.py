@@ -1,8 +1,10 @@
 
 import numpy as np
 import h5py
+import sys
 
-f = h5py.File("test_data.h5", "r+")
+fname = sys.argv[1]
+f = h5py.File(fname, "r+")
 Efit = np.array([1.45585875e-01, 8.92420032e+03])
 proc_spec_name = "hist_spec"
 energy_name = "energy_bins"
