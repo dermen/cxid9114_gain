@@ -1,5 +1,5 @@
 {
-  "modules_required_for_use":["cxi_xdr_xes"],
+  "optional_modules":["cxi_xdr_xes"],
   "modules_required_for_build":["xfel","iotbx"],
 }
 
