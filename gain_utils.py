@@ -169,13 +169,15 @@ def main2():
     dark = det.pedestals(62)
     gain_map = det.gain_mask(62) == 1
     mask = mask_utils.mask_small_regions(gain_map)
-    mask2 = np.load("details_mask.npy")
+    mask2 = np.load("mask/details_mask.npy")
     mask *= mask2
     start = 0
 
     all_ylow = []
     all_yhigh = []
-    for i in range(1800):
+    for i in range(1200):
+        if i < 1000:
+            continue
         ev = events.next()
         if ev is None:
             continue
@@ -195,7 +197,7 @@ def main2():
         #plt.imshow( new_data[0],  vmin=-10,vmax=50,cmap='gnuplot')
         #plt.show()
         print i
-    np.savez("/home/dermen/cxid9114_data/all_shot_hists",
+    np.savez("all_shot_hists",
             ylow=all_ylow, yhigh=all_yhigh, xlow=xlow, xhigh=xhigh)
 
 

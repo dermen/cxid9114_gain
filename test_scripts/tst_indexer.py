@@ -91,7 +91,9 @@ def tst_find_spots():
         Nrefls = len(refls_strong)
         print ("Found %d reflections on image %d; expected %d refls" % (Nrefls, i, expected_Nref[i]))
 
-        assert(Nrefls == expected_Nref[i])
+        allowed_list = [expected_Nref[i] +offset for offset in [-1,0,1]]
+        print (allowed_list)
+        assert(Nrefls in allowed_list)
         REFLS.append( refls_strong)
 
 

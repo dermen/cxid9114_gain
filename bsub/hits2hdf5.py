@@ -63,7 +63,7 @@ with h5py.File( output_h5_name, "w") as out_h5:
     for i_hit in range(Nhits):
         print '\rSaving hit {:d}/{:d}'.format(i_hit+1, Nhits),
         sys.stdout.flush()
-        shot_idx = idx[where_hits[i_hit]]
+        shot_idx = idx[ i_hit] # idx[where_hits[i_hit]]
         
         t = loader.times[ shot_idx]  # event time
         sec, nsec, fid = t.seconds(), t.nanoseconds(), t.fiducial()
