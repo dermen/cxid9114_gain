@@ -25,11 +25,13 @@ def run_sim2smv(Nshot_max,odir, prefix, rank, n_jobs, save_bragg=False,
   from cxid9114 import utils
   from cxid9114.parameters import ENERGY_CONV
   from cxid9114.bigsim import sim_spectra
+ 
   
   odir_j = os.path.join( odir, "job%d" % rank)
   if not os.path.exists(odir_j):
       os.makedirs(odir_j)
 
+  overwrite = False
   sample_thick_mm = 0.005  # 50 micron GDVN nozzle makes a ~5ish micron jet
   air_thick_mm =0  # mostly vacuum, maybe helium layer of 1 micron
   flux_ave=2e11
@@ -68,23 +70,46 @@ def run_sim2smv(Nshot_max,odir, prefix, rank, n_jobs, save_bragg=False,
   idx_range = np.array_split(np.arange(Nshot), n_jobs)
     
   Nshot_per_job = len(idx_range[rank])
+ 
+  #if save_h5:
+  #    h5_fname = os.path.join(odir , prefix % idx+ "_%Job%d.h5" % rank)
+  #    h5 = h5py.File(h5_fname, "w")
     
+  istart = idx_range[rank][0]
+  istop = idx_range[rank][-1]
+  smi_stride = 10
   for idx in idx_range[rank]:
-    print ("<><><><><><>")
-    print ("Job %d; Image %d / %d" % (rank, idx+1,idx_range[rank][0] + Nshot_per_job))
-    print ("<><><><><><>")
+    print ("<><><><><><><><><><><><><><>")
+    print ("Job %d; Image %d (%d - %d)" % (rank, idx+1, istart, istop))
+    print ("<><><><><><><><><><><><><><>")
     
-    if (rank==0):
+    smv_fileout = os.path.join( odir_j, prefix % idx + ".img")
+    h5_fileout = smv_fileout + ".h5"
+    
+    if os.path.exists(smv_fileout) and not overwrite and save_smv:
+        print("Shot %s exists: moving on" % smv_fileout)
+        continue
+    
+    if os.path.exists(h5_fileout) and not overwrite and save_h5:
+        print("Shot %s exists: moving on" % h5_fileout)
+        continue
+    
+    if (rank==0 and idx % smi_stride==0):
       print("GPU status")
       os.system("nvidia-smi")
+      
+      print("\n\n")
+      print("CPU memory usage")
+      mem_usg= """ps -U dermen --no-headers -o rss | awk '{ sum+=$1} END {print int(sum/1024) "MB"}'"""
+      os.system(mem_usg)
 
     spec = spec_data[idx]
     rotation = sqr(Umat_data[idx])
     wavelength_A = np.mean(wave_chans)
+    
   
     spectra = iter([(wave_chans, spec, wavelength_A)])
   
-    smv_fileout = os.path.join( odir_j, prefix % idx + ".img")
   
     direct_algo_res_limit = 1.7
 
@@ -169,8 +194,7 @@ def run_sim2smv(Nshot_max,odir, prefix, rank, n_jobs, save_bragg=False,
         raw_pixel_sum += SIM.raw_pixels * crystal.domains_per_crystal
 
     print()
-  # image 1: crystal Bragg scatter
-
+    
     SIM.raw_pixels = raw_pixel_sum + background
   
     SIM.detector_psf_kernel_radius_pixels=5;
@@ -188,9 +212,8 @@ def run_sim2smv(Nshot_max,odir, prefix, rank, n_jobs, save_bragg=False,
     if save_smv:
       SIM.to_smv_format_py(fileout=smv_fileout,intfile_scale=1,rotmat=True,extra=extra,gz=True)
     elif save_h5:
-      h5_fileout = smv_fileout + ".h5"
       f = h5py.File(h5_fileout, "w")
-      f.create_dataset("data", data=SIM.raw_pixels.as_numpy_array().astype(np.uint16), 
+      f.create_dataset("bigsim_d9114", data=SIM.raw_pixels.as_numpy_array().astype(np.uint16).reshape(detpixels_slowfast), 
         compression="lzf")
       f.close()
   
@@ -200,11 +223,14 @@ def run_sim2smv(Nshot_max,odir, prefix, rank, n_jobs, save_bragg=False,
 if __name__=="__main__":
   from joblib import Parallel, delayed
   import sys
-  odir = "/global/project/projectdirs/lcls/dermen/bigsim"
   prefix = "run62_%06d"
+  odir = "/global/project/projectdirs/lcls/dermen/bigsim"
+  tag = sys.argv[2]
+  odir = odir + tag
   n_jobs = int(sys.argv[1])
   Parallel(n_jobs=n_jobs)( \
-    delayed(run_sim2smv)(Nshot_max=100,odir=odir, prefix=prefix, rank=jid, n_jobs=n_jobs) \
+    delayed(run_sim2smv)(Nshot_max=None,odir=odir, prefix=prefix, \
+            save_smv=False, save_h5=True, rank=jid, n_jobs=n_jobs) \
     for jid in range(n_jobs) )
   
 
