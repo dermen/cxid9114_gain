@@ -280,6 +280,9 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
 
     vecd fvec_callable(vecd current_values) {
           vecd y_diff = vecd(y_obs.size());
+
+          double a = std::exp(current_values[2*Nhkl + 2*Ns]);
+          double b = std::exp(current_values[2*Nhkl + 2*Ns+1]);
           for (int i = 0; i < y_obs.size(); ++i){
 
             std::size_t i_hkl = Aidx[i];
@@ -290,8 +293,8 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
             double GAval = std::exp(current_values[2*Nhkl + i_s]);
             double GBval = std::exp(current_values[2*Nhkl + Ns + i_s]);
 
-            double y_calc = GAval * IAval * PA[i]
-                                        + GBval * IBval*PB[i];
+            double y_calc = a*GAval * IAval * PA[i]
+                                        + b*GBval * IBval*PB[i];
             y_diff[i] = y_obs[i] - y_calc;
           }
           return y_diff;
@@ -307,11 +310,14 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           return;
         }
 
-        veci jacobian_one_row_indices(4);
-        vecd jacobian_one_row_data(4);
+        veci jacobian_one_row_indices(6);
+        vecd jacobian_one_row_data(6);
 
         size_t* jacobian_one_row_indices_pt = &jacobian_one_row_indices[0];
         double* jacobian_one_row_data_pt = &jacobian_one_row_data[0];
+
+        double a = std::exp(current_values[2*Nhkl + 2*Ns ]);
+        double b = std::exp(current_values[2*Nhkl + 2*Ns + 1]);
 
         // add one of the normal equations per each observation
         for (int ix = 0; ix < y_obs.size(); ++ix) {
@@ -328,27 +334,37 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           double Bterm = IBval*PB[ix];
 
           // first derivitive of "yobs - ycalc" w.r.t. IA
-          double dIA = GAval * Aterm; //IAval * LA[ix] * PA[ix];
+          double dIA = a*GAval * Aterm; //IAval * LA[ix] * PA[ix];
           //jacobian_one_row_indices.push_back( i_hkl );
           //jacobian_one_row_data.push_back(dIA);
           jacobian_one_row_indices_pt[0]= i_hkl;
           jacobian_one_row_data_pt[0] = dIA;
 
           // derivitive w.r.t. IB
-          double dIB = GBval * Bterm;// IBval *LB[ix] * PB[ix];
+          double dIB = b*GBval * Bterm;// IBval *LB[ix] * PB[ix];
           //jacobian_one_row_indices.push_back( Nhkl+i_hkl );
           //jacobian_one_row_data.push_back(dIB);
           jacobian_one_row_indices_pt[1]= Nhkl + i_hkl;
           jacobian_one_row_data_pt[1] = dIB;
 
           // derivitive w.r.t. G
-          double dGA = GAval*Aterm;
+          double dGA = a*GAval*Aterm;
           jacobian_one_row_indices_pt[2]= 2*Nhkl + i_s;
           jacobian_one_row_data_pt[2] = dGA;
 
-          double dGB = GBval*Bterm;
+          double dGB = b*GBval*Bterm;
           jacobian_one_row_indices_pt[3]= 2*Nhkl + Ns+i_s;
           jacobian_one_row_data_pt[3] = dGB;
+
+          // derivitive w.r.t. a
+          double da = a*GAval*Aterm;
+          jacobian_one_row_indices_pt[4]= 2*Nhkl + 2*Ns;
+          jacobian_one_row_data_pt[4] = da;
+
+          // derivitive w.r.t. b
+          double db = b*GBval*Bterm;
+          jacobian_one_row_indices_pt[5]= 2*Nhkl + 2*Ns+1;
+          jacobian_one_row_data_pt[5] = db;
 
           //add_equation(residuals[ix], jacobian_one_row.const_ref(), weights[ix]);
           add_residual(-residuals[ix], 1.0);

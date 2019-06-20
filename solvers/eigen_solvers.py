@@ -20,6 +20,13 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
     self.stored_functional = []
     self.truth = truth
     self.plot = plot
+    self.n_iters = 0
+    if self.truth is not None:
+        self.FA_truth = self.truth[:self.Nhkl]
+        self.FB_truth = self.truth[self.Nhkl:2*self.Nhkl]
+        self.minRatio_tru = min(self.FA_truth / self.FB_truth)
+        self.maxRatio_tru = max(self.FA_truth / self.FB_truth)
+
     if plot:
 
       self.fig, (self.ax1,self.ax2,self.ax3) = plt.subplots(
@@ -39,6 +46,7 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
       functional = self.functional(self.x)
       self.stored_functional.append(functional)
       print("\n\t<><><><><><>")
+      print("Begin iteration %d" % self.n_iters)
       print("\tFunctional value: %.4e" % functional)
       if self.truth is not None:
         functional_ideal = self.functional(self.truth)
@@ -48,11 +56,21 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
       if self.Nhkl is not None and self.Ns is not None:
         FA = self.x[:self.Nhkl]
         FB = self.x[self.Nhkl:2*self.Nhkl]
+
+        minRatio = min(FA / FB)
+        maxRatio = max(FA / FB)
+        if self.truth is not None:
+            print "Truth MinRatio: %.4f ; MinRatio %.4f" % (self.minRatio_tru, minRatio)
+            print "Truth MaxRatio: %.4f ; MaxRatio %.4f" % (self.maxRatio_tru, maxRatio)
+
         GA = self.x[2*self.Nhkl:2*self.Nhkl + self.Ns]
-        #GB = self.x[2*self.Nhkl+self.Ns:]
+        a = self.x[2*self.Nhkl + 2*self.Ns]
+        b = self.x[2*self.Nhkl + 2*self.Ns+1]
         print("Max FA: %.4e   Min FA: %.4e " % (max(FA), min(FA)))
         print("Max FB: %.4e   Min FB: %.4e " % (max(FB), min(FB)))
         print("Max ScaleFactorA: %.2e   Min ScaleFactorA: %.2e " % (max(GA), min(GA)))
+        print ("a factor: %f " %a)
+        print ("b factor: %f " %b)
         if self.plot:
             self.ax1.clear()
             self.ax2.clear()
@@ -75,13 +93,17 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
             self.fig.canvas.draw()
             if self.truth is not None:
                 self.f2_ax.clear()
-                self.f2_ax.plot(self.truth[:len(FA)], FA, '.', ms=0.2)
+                self.f2_ax.plot(self.FA_truth, FA, '.', ms=0.2)
                 self.f2_ax.plot(FArng, FArng, color='C1', lw=0.5, ls='--')
                 self.fig2.canvas.draw()
             plt.pause(0.3)
 
-
+      np.savez_compressed("_autogen_niter%d" % self.n_iters,
+        x=self.x, Nhkl=self.Nhkl, Nscale=self.Ns, minRatio=minRatio,
+        maxRatio=maxRatio, functional=functional)
       self.stored_functional.append(functional)
+      self.n_iters += 1
+
     self.access_cpp_build_up_directly_eigen_eqn(objective_only, current_values = self.x)
 
 
@@ -100,6 +122,7 @@ class eigen_solver(solvers.LBFGSsolver):
         self.x_truth = self.IAprm_truth.concatenate(self.IBprm_truth)
         self.x_truth = self.x_truth.concatenate(self.GAprm_truth)
         self.x_truth = self.x_truth.concatenate(self.GBprm_truth)
+        self.x_truth = self.x_truth.concatenate(flex.double([1, 1]))  # add in dummie a,b
 
     IA = flex.double(np.ascontiguousarray(self.guess["IAprm"]))
     IB = flex.double(np.ascontiguousarray(self.guess["IBprm"]))
@@ -108,17 +131,19 @@ class eigen_solver(solvers.LBFGSsolver):
     self.x_init = IA.concatenate(IB)
     self.x_init = self.x_init.concatenate(GA)
     self.x_init = self.x_init.concatenate(GB)
+    self.x_init = self.x_init.concatenate(flex.double([1, 1]))
 
-    assert (len(self.x_init) == self.Nhkl * 2 + self.Ns * 2)
+    assert (len(self.x_init) == self.Nhkl*2 + self.Ns*2 + 2)
 
     IAx = flex.log(self.x_init[:self.Nhkl])
     IBx = flex.log(self.x_init[self.Nhkl:2 * self.Nhkl])
     GAx = flex.log(self.x_init[2 * self.Nhkl: 2*self.Nhkl + self.Ns])
     GBx = flex.log(self.x_init[2 * self.Nhkl + self.Ns:])
-
+    abx = flex.log(self.x_init[2 * self.Nhkl + self.Ns:])
     self.x_init = IAx.concatenate(IBx)
     self.x_init = self.x_init.concatenate(GAx)
     self.x_init = self.x_init.concatenate(GBx)
+    self.x_init = self.x_init.concatenate(abx)
 
     self.counter = 0
 
@@ -146,7 +171,7 @@ class eigen_solver(solvers.LBFGSsolver):
       print "End of minimization: Converged", self.helper.counter, "cycles"
       print self.helper.get_eigen_summary()
       print "Converged functional: ", self.helper.functional(self.helper.x)
-    except AssertionError:
+    except (AssertionError,KeyboardInterrupt):
       print("I did not converge according to setup params..")
       pass
 

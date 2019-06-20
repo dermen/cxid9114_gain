@@ -31,5 +31,16 @@ def from_data_init():
     obj = out.mtz_object()
     obj.write("test_refined_init.mtz")
 
+
+def from_named_data(pkl_name):
+    from cxid9114 import utils
+    waveA = ENERGY_CONV/8944.
+    IA = utils.open_flex(pkl_name) # this is refined miller data
+    out = IA.as_mtz_dataset(column_root_label="Iobs", title="B", wavelength=waveA)
+    out.add_miller_array(miller_array=IA.average_bijvoet_mates(), column_root_label="IMEAN")
+    obj = out.mtz_object()
+    obj.write(pkl_name.replace(".pkl",".mtz"))
+
 if __name__=="__main__":
-    from_data_init()
+    import sys
+    from_named_data(sys.argv[1])

@@ -1,6 +1,5 @@
 import numpy as np
 
-
 def gen_real_data_and_guess(gain=1):
     """data from CXID9114"""
     data = np.load("real_dataA.npz")
@@ -39,6 +38,8 @@ def gen_truth_for_data():
     #data = np.load("rocketships/truth_TR_synch.npz")
     IAprm = data['IAprm']
     IBprm = data['IBprm']
+    from IPython import embed
+    embed()
     return {"IAprm": IAprm, "IBprm": IBprm}
 
 

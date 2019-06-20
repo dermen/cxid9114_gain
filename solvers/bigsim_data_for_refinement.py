@@ -1,22 +1,12 @@
 import pandas
 import numpy as np
 from itertools import izip
+import sys
+from cxid9114 import utils
 
-df = pandas.read_pickle(
-    "rocketships/all_the_goodies_wReso_and_anom_corrected.pkl")
-
-# somehow duplicates ended up in dataframe, need to figure out why..
-df = df.loc[~df.duplicated()].reset_index()
+df = pandas.read_pickle("bigsim_rocketships/bigsim.pkl")
 
 Kfact = 1e20
-
-df = df.query("reso > 2.4")
-
-
-from cxid9114.utils import is_outlier
-out_thresh=45
-df = df.loc[~is_outlier(df.Dnoise,out_thresh)]
-
 
 hkl = tuple(map(tuple,  df[['hAnom', 'kAnom', 'lAnom']].values.astype(int)))
 hkl_map = {h: i for i, h in enumerate(set(hkl))}
@@ -36,8 +26,6 @@ df['hkl_idx'] = hkl_idx
 
 gb = df.groupby(['hAnom', 'kAnom', 'lAnom'])
 
-import sys
-from cxid9114 import utils
 SA = utils.open_flex("SA.pkl")
 SA_map = {SA.indices()[i]: SA.data()[i] for i in range(len(SA.indices()))}
 SB = utils.open_flex("SB.pkl")
@@ -57,6 +45,8 @@ for h in set(hkl):
     except KeyError:
         IB.append(1000)
 
+from IPython import embed
+embed()
 
 np.savez(sys.argv[1],
         IAprm=IA, IBprm=IB,

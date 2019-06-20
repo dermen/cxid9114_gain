@@ -24,12 +24,11 @@ for i in range(Nhkl):
     hout.append(h)
     Iout.append(np.exp(val))
 
-    
 sg = sgtbx.space_group(" P 4nw 2abw")
 Symm = crystal.symmetry( unit_cell=(79,79,38,90,90,90), space_group=sg)
 hout = tuple(hout)
 mil_idx = flex.miller_index(hout)
-mil_set = miller.set( crystal_symmetry=Symm, indices=mil_idx, anomalous_flag=True)
+mil_set = miller.set(crystal_symmetry=Symm, indices=mil_idx, anomalous_flag=True)
 Iout_flex = flex.double(np.ascontiguousarray(Iout))
 mil_ar = miller.array(mil_set, data=Iout_flex).set_observation_type_xray_intensity()
 utils.save_flex(mil_ar, "n00b_begin.pkl")
