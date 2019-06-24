@@ -16,7 +16,7 @@ def sfall_channels(en_chans, output_name):
             '003_s0_mark0_001.pdb', 
             algo='fft', 
             dmin=1.5, 
-            ano_flag=True, load_lines=False)
+            ano_flag=True) 
         Fout.append(F.data().as_numpy_array())
     hkl = F.indices()  # should be same hkl list for all channels
     hkl = np.vstack([hkl[i] for i in range(len(hkl))])
@@ -37,7 +37,6 @@ def load_spectra(fname):
    
     mil_ar = {} 
     for i_chan, data_chan in enumerate(data):
-        print i_chan
         data_flex = flex.complex_double(np.ascontiguousarray(data_chan))
         mil_ar[i_chan] = miller.array(mil_set, data=data_flex)
     return mil_ar
@@ -48,3 +47,4 @@ if __name__=="__main__":
     en_chans = f["energy_bins"][()]
     sfall_channels(en_chans, "test_sfall.h5")
     print load_spectra("test_sfall.h5")[0].data()[0]
+

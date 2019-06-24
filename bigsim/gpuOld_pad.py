@@ -1,11 +1,20 @@
+#!/usr/bin/env libtbx.python
 from __future__ import division, print_function
 
 npout = None
 verbose = 0
 beamsize_mm=0.001
 exposure_s=1
+overwrite = False
+add_background=False 
+add_noise=False 
+idx_path = None
+on_axis=False
+force_twocolor=False
+force_index=None
+
 #@profile
-def run_sim2smv(Nshot_max, odir, prefix, rank, n_jobs, save_bragg=False, 
+def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False, 
             save_smv=True, save_h5 =False, return_pixels=False):
 
   import os
@@ -28,26 +37,30 @@ def run_sim2smv(Nshot_max, odir, prefix, rank, n_jobs, save_bragg=False,
   from cxid9114.sim import sim_utils
   from cxid9114.parameters import ENERGY_CONV, ENERGY_HIGH, ENERGY_LOW
   from cxid9114.bigsim import sim_spectra
- 
+  from dxtbx.model.crystal import CrystalFactory 
   
   odir_j = os.path.join( odir, "job%d" % rank)
   if not os.path.exists(odir_j):
       os.makedirs(odir_j)
 
-  add_noise = False
-  add_background = False
-  overwrite = True #$False
+  cryst_descr = {'__id__': 'crystal',
+              'real_space_a': (79, 0, 0),
+              'real_space_b': (0, 79, 0),
+              'real_space_c': (0, 0, 38),
+              'space_group_hall_symbol': '-P 4 2'} 
+  Crystal = CrystalFactory.from_dict(cryst_descr)
+
   offset_adu=30
   mos_spread_deg=0.015
   mos_doms=1000
   beam_size_mm=0.001
   exposure_s=1
-  use_microcrystal=True #False
-  Ncells_abc=(120,120,120)
+  use_microcrystal=True 
   Deff_A = 2200
   length_um = 2.2
   timelog = False
-  background = utils.open_flex("background")
+  if add_background:
+    background = utils.open_flex("background")
  
   crystal = microcrystal(Deff_A = Deff_A, length_um = length_um, 
         beam_diameter_um = beam_size_mm*1000, verbose=False) 
@@ -78,7 +91,7 @@ def run_sim2smv(Nshot_max, odir, prefix, rank, n_jobs, save_bragg=False,
     print ("Job %d; Image %d (%d - %d)" % (rank, idx+1, istart, istop))
     print ("<><><><><><><><><><><><><><>")
     
-    smv_fileout = os.path.join( odir_j, prefix % idx + ".img")
+    smv_fileout = os.path.join( odir_j, "%s_%d.img" % (tag,idx))
     h5_fileout = smv_fileout + ".h5"
     
     if os.path.exists(smv_fileout) and not overwrite and save_smv:
@@ -97,25 +110,31 @@ def run_sim2smv(Nshot_max, odir, prefix, rank, n_jobs, save_bragg=False,
       print("CPU memory usage")
       mem_usg= """ps -U dermen --no-headers -o rss | awk '{ sum+=$1} END {print int(sum/1024) "MB consumed by CPU user"}'"""
       os.system(mem_usg)
-    spec = spec_data[2]
-    rotation = sqr(Umat_data[2])
+    if force_index is not None:
+        spec = spec_data[force_index]
+        rotation = sqr(Umat_data[force_index])
+    else:
+        spec = spec_data[idx]
+        rotation = sqr(Umat_data[idx])
     wavelength_A = np.mean(wave_chans)
   
     spectra = iter([(wave_chans, spec, wavelength_A)])
     wavlen, flux, wavelength_A = next(spectra) # list of lambdas, list of fluxes, average wavelength
     assert wavelength_A > 0
     assert (len(wavlen)==len(flux)==len(sfall_main))
-
+    if np.sum(flux)==0:
+        continue
     N = crystal.number_of_cells(sfall_main[0].unit_cell())
     Ncells_abc = (N,N,N)  
+    if not on_axis:
+        Crystal.set_U(rotation)
     
-    idxpath = "try3_idx2/job0/dump_0_data.pkl"
-    idxpath = "try5_idx/job0/dump_0_data.pkl"
-    idxpath = "try7_idx/job0/dump_0_data.pkl"
-    Crystal = utils.open_flex(idxpath)["crystalAB"]
-    flux *= 0
-    flux[ilow] = 1e12
-    flux[ihigh]=1e12
+    if idx_path is not None:
+        Crystal = utils.open_flex(idx_path)['crystalAB']
+    if force_twocolor: 
+        flux *= 0
+        flux[ilow] = 1e12
+        flux[ihigh]=1e12
     
     simsAB = sim_utils.sim_twocolors2(
         Crystal,
@@ -126,23 +145,47 @@ def run_sim2smv(Nshot_max, odir, prefix, rank, n_jobs, save_bragg=False,
         flux,
         pids = None,
         profile="gauss",
-        oversample=1,
+        oversample=0,
         Ncells_abc = Ncells_abc,
         mos_dom=mos_doms,
         verbose=verbose,
         mos_spread=mos_spread_deg,
-        cuda=True, device_Id =rank,
+        cuda=True, 
+        device_Id =rank,
         beamsize_mm=beamsize_mm,
         exposure_s=exposure_s,
-        boost= crystal.domains_per_crystal) 
+        boost=crystal.domains_per_crystal)
     
     out = np.sum( [ simsAB[i][0] for i in simsAB.keys() if simsAB[i]], axis=0)
-    print()
+    if out.shape==():
+        continue
+
+    if add_background:
+        out = out + background.as_numpy_array() #.reshape( out.shape)
+    if add_noise:
+        SIM = Patt.SIM2
+        SIM.raw_pixels = flex.double(out.ravel())
+        SIM.detector_psf_kernel_radius_pixels=5;
+        SIM.detector_psf_type=shapetype.Unknown # for CSPAD
+        SIM.detector_psf_fwhm_mm=0
+        SIM.quantum_gain = 1 
+        SIM.add_noise()
+        out = SIM.raw_pixels.as_numpy_array()
 
     f = h5py.File(h5_fileout, "w")
     f.create_dataset("bigsim_d9114", 
         data=out, 
         compression="lzf")
+
+    ua,ub,uc = Crystal.get_real_space_vectors()
+    f.create_dataset("real_space_a", data=ua)
+    f.create_dataset("real_space_b", data=ub)
+    f.create_dataset("real_space_c", data=uc)
+    f.create_dataset("space_group_hall_symbol", 
+                data=Crystal.get_space_group().info().type().hall_symbol())
+    f.create_dataset("Umatrix", data=Crystal.get_U())
+    f.create_dataset("fluxes",data=flux)
+    f.create_dataset("energies", data=en_chans)
     f.close()
  
     if npout is not None: 
@@ -153,24 +196,41 @@ if __name__=="__main__":
   from joblib import Parallel, delayed
   import sys
   from argparse import ArgumentParser 
-  prefix = "run62_%06d"
   parser = ArgumentParser("gpu sim pad")
   parser.add_argument("-g", dest="n_gpu",default=1, type=int, help="number of GPUs")
-  parser.add_argument("-t", dest="tag", type=str, default="+-+", help="string tag")
+  parser.add_argument("-tag", dest="tag", type=str, default="run62", help="tag")
   parser.add_argument("-m", dest="Nshot_max", type=int, default=-1, help="max num of shot to process per job")
   parser.add_argument("-o", dest="odir", type=str,default='.', help="output dir")
   parser.add_argument("-n", dest="npout", type=str,default=None, help="numpy output file")
   parser.add_argument("-v", dest="verbose", type=int,default=0, help="verbosity level (0-10)" )
+  parser.add_argument("-idx-path", dest="idx_path", default=None, type=str, 
+                    help="path to a dump pickle for debugging" )
+  parser.add_argument("--add-bg", dest="add_bg",action='store_true',help="add background" )
+  parser.add_argument("--add-noise", dest="add_noise",action='store_true',help="add noise" )
+  parser.add_argument("--overwrite", dest="overwrite", 
+                    action='store_true', help="whether to overwrite" )
+  parser.add_argument("--on-axis", dest="onaxis", 
+                    action='store_true', help="whether to apply rotation mat (debugging)" )
+  parser.add_argument("--force-twocolor", dest="force2", 
+                    action='store_true', help="whether to force two colors" )
+  parser.add_argument('--force-index', dest='force_idx', type=int, default=None, 
+                help="use specific index for spectrum and rotation")
   args = parser.parse_args()
-
+ 
+  force_index=args.force_idx 
+  force_twocolor = args.force2
+  on_axis = args.onaxis
+  idx_path = args.idx_path
+  add_background=args.add_bg
+  add_noise = args.add_noise
+  overwrite = args.overwrite
   verbose = args.verbose
   n_jobs = args.n_gpu
-  tag = args.tag
   Nshot_max = args.Nshot_max
   odir = args.odir
   npout = args.npout
   Parallel(n_jobs=n_jobs)( \
-    delayed(run_sim2smv)(Nshot_max=Nshot_max,odir=odir, prefix=prefix, \
+    delayed(run_sim2smv)(Nshot_max=Nshot_max,odir=odir, tag=args.tag, \
             save_smv=False, save_h5=True, rank=jid, n_jobs=n_jobs) \
     for jid in range(n_jobs) )
   
