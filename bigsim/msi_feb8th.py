@@ -6,6 +6,8 @@ logging.basicConfig(filename="_msi_dump.log", level=logging.INFO)
 use_dials_spotter=False
 min_spot_per_pattern=10
 tag = "data"
+stills_refine = False
+basis_refine = False
 
 def msi(n_jobs, jid, out_dir, tag, glob_str ):
     """
@@ -37,7 +39,9 @@ def msi(n_jobs, jid, out_dir, tag, glob_str ):
     from dials.command_line.stills_process import phil_scope\
         as indexer_phil_scope  
     from cxi_xdr_xes.command_line.two_color_process import two_color_phil_scope 
+    from dials.algorithms.indexing.lattice_search import basis_vector_search_phil_scope
     indexer_phil_scope.adopt_scope(two_color_phil_scope)
+    indexer_phil_scope.adopt_scope(basis_vector_search_phil_scope)
     mad_index_params = indexer_phil_scope.extract() 
     
     fnames = glob.glob(glob_str)
@@ -90,7 +94,8 @@ def msi(n_jobs, jid, out_dir, tag, glob_str ):
     mad_index_params.refinement.parameterisation.detector.fix = "all"
     mad_index_params.refinement.verbosity = 3
     #mad_index_params.refinement.reflections.outlier.algorithm = "null"
-    mad_index_params.indexing.stills.refine_all_candidates = True
+    mad_index_params.indexing.stills.refine_all_candidates = args.stills_refine 
+    mad_index_params.indexing.optimise_initial_basis_vectors = args.basis_refine 
     #mad_index_params.indexing.stills.refine_candidates_with_known_symmetry = False
     
     mad_index_params.indexing.known_symmetry.space_group = KNOWN_SYMMETRY.space_group_info()
@@ -168,7 +173,7 @@ def msi(n_jobs, jid, out_dir, tag, glob_str ):
                 experiments=El,
                 params=mad_index_params)
             orientAB.index()
-        except (Sorry, RuntimeError) as error:
+        except (Sorry, RuntimeError, AssertionError) as error:
             print("####\nIndexingFailed  T_T \n####")
             print (error)
             failed_shots.append( idx)
@@ -207,7 +212,14 @@ if __name__=="__main__":
     parser.add_argument('-t', dest='t', type=str, help='outputfile tag', default='data')
     parser.add_argument('-glob', dest='glob', help='glob string for input files', 
                 required=True, type=str)
+    parser.add_argument('--stills-refine', dest='stills_refine', action='store_true',
+        help='refine candidate matrices from within stills indexer')
+    parser.add_argument('--basis-refine', dest='basis_refine', action='store_true',
+        help='refine candidate basis vectors using dials basis vector search')
     args = parser.parse_args()
+
+    stills_refine = args.stills_refine
+    basis_refine = args.basis_refine
     n_jobs = args.j
     outdir = args.o
     glob_str = args.glob 

@@ -40,8 +40,6 @@ cryst_descrB = {'__id__': 'crystal',
 CrystalA = CrystalFactory.from_dict(cryst_descrA)
 CrystalB = CrystalFactory.from_dict(cryst_descrB)
 
-from IPython import embed
-embed()
 rot_diffs = rotation_matrix_differences((CrystalA, CrystalB))
 print(rot_diffs)
 

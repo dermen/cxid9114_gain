@@ -285,7 +285,7 @@ class PatternFactory:
 
     def __init__(self, crystal=None, detector=None, beam=None,
                  Ncells_abc=(10,10,10), Gauss=False, oversample=0, panel_id=0,
-                 recenter=True, verbose=10, profile=None):
+                 recenter=True, verbose=10, profile=None, device_Id=0):
         """
         :param crystal:  dials crystal model
         :param detector:  dials detector model
@@ -323,6 +323,10 @@ class PatternFactory:
             elif profile == "square":
                 self.SIM2.xtal_shape = shapetype.Square
         
+        try:
+            self.SIM2.device_Id=0
+        except AttributeError:
+            pass
         self.SIM2.progress_meter = False
         self.SIM2.flux = 1e14
         self.SIM2.beamsize_mm = 0.004
@@ -456,6 +460,7 @@ class PatternFactory:
                 self.SIM2.add_nanoBragg_spots()
 
         self.SIM2.raw_pixels*=boost
+        
         if add_water:
             water_scatter = flex.vec2_double(
                 [(0, 2.57), (0.0365, 2.58), (0.07, 2.8), (0.12, 5), (0.162, 8), (0.2, 6.75), (0.18, 7.32),
@@ -538,7 +543,8 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                    Gauss=False, oversample=0, Ncells_abc=(5,5,5),verbose=0,
                    div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15, profile=None,
                    roi_pp=None, counts_pp=None, cuda=False, omp=False, gimmie_Patt=False,
-                   add_water=False, add_noise=False, boost=1):
+                   add_water=False, add_noise=False, boost=1, device_Id=0,
+                   beamsize_mm=None, exposure_s=None):
     Npan = len(detector)
     Nchan = len(energies)
 
@@ -559,12 +565,18 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                                Gauss=Gauss,
                                verbose=verbose,
                                Ncells_abc=Ncells_abc,
-                               oversample=oversample, profile=profile)
-
+                               oversample=oversample, profile=profile, device_Id=device_Id)
+        if beamsize_mm is not None:
+            PattF.SIM2.beamsize_mm=beamsize_mm
+        if exposure_s is not None:
+            PattF.SIM2.exposure_s=exposure_s
         PattF.adjust_mosaicity(mos_dom, mos_spread)
         PattF.adjust_dispersion(disp_pct)
         PattF.adjust_divergence(div_tup)
         for i_en in range(Nchan):
+            if fluxes[i_en] ==0:
+                continue
+            
             PattF.primer(crystal=crystal,
                          energy=energies[i_en],
                          F=fcalcs[i_en],
@@ -584,6 +596,8 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
     if gimmie_Patt:
         return panel_imgs, PattF
     else:
+        PattF.SIM2.free_all()
+        del PattF
         return panel_imgs
 
 

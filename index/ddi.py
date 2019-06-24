@@ -5,7 +5,7 @@ import sys
 import numpy as np
 import cPickle
 
-from dials.algorithms.indexing.indexer import master_phil_scope\
+from dials.command_line.stills_process import phil_scope\
     as indexer_phil_scope
 from dxtbx.model.beam import BeamFactory
 try:

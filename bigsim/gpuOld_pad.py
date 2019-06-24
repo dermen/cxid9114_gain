@@ -50,7 +50,7 @@ def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False,
               'space_group_hall_symbol': '-P 4 2'} 
   Crystal = CrystalFactory.from_dict(cryst_descr)
 
-  offset_adu=30
+  #offset_adu=30
   mos_spread_deg=0.015
   mos_doms=1000
   beam_size_mm=0.001
