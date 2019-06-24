@@ -355,7 +355,7 @@ def add_xy_to_ax_as_patches(xy, patch_type, patch_sty, ax, sizes=None, alpha=1.)
 
 
 def plot_overlap(refls_simA, refls_simB, refls_data, detector, alpha=.75,
-                 square_s=4, cutoff=4, circ_r=5):
+                 square_s=4, cutoff=4, circ_r=5, scale_sizes=False):
     """
     # so this should change
     refls tables from simulations A and B as well as the data
@@ -393,10 +393,12 @@ def plot_overlap(refls_simA, refls_simB, refls_data, detector, alpha=.75,
     Circle_styleB = {"ec": "C3", "fc": "C3", "lw": "1", "radius": r}
 
     # size the stots according to mean intensity
-    sizesA = np.log10(allIA)
-    sizesB = np.log10(allIB)
-    sizesA -= sizesA.min()
-    sizesB -= sizesB.min()
+    sizesA = sizesB = None
+    if scale_sizes:
+        sizesA = np.log10(allIA)
+        sizesB = np.log10(allIB)
+        sizesA -= sizesA.min()
+        sizesB -= sizesB.min()
 
     add_xy_to_ax_as_patches(zip(xA, yA), plt.Circle, Circle_styleA, ax, alpha=alpha, sizes=sizesA)
     add_xy_to_ax_as_patches(zip(xB, yB), plt.Circle, Circle_styleB, ax, alpha=alpha, sizes=sizesB)
