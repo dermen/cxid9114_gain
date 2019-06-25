@@ -285,7 +285,7 @@ class PatternFactory:
 
     def __init__(self, crystal=None, detector=None, beam=None,
                  Ncells_abc=(10,10,10), Gauss=False, oversample=0, panel_id=0,
-                 recenter=True, verbose=10, profile=None, device_Id=0):
+                 recenter=True, verbose=10, profile=None, device_Id=None):
         """
         :param crystal:  dials crystal model
         :param detector:  dials detector model
@@ -322,11 +322,9 @@ class PatternFactory:
                 self.SIM2.xtal_shape = shapetype.Round
             elif profile == "square":
                 self.SIM2.xtal_shape = shapetype.Square
-        
-        try:
-            self.SIM2.device_Id=0
-        except AttributeError:
-            pass
+       
+        if device_Id is not None: 
+            self.SIM2.device_Id=device_Id
         self.SIM2.progress_meter = False
         self.SIM2.flux = 1e14
         self.SIM2.beamsize_mm = 0.004
@@ -565,7 +563,8 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                                Gauss=Gauss,
                                verbose=verbose,
                                Ncells_abc=Ncells_abc,
-                               oversample=oversample, profile=profile, device_Id=device_Id)
+                               oversample=oversample, profile=profile, 
+                               device_Id=device_Id)
         if beamsize_mm is not None:
             PattF.SIM2.beamsize_mm=beamsize_mm
         if exposure_s is not None:

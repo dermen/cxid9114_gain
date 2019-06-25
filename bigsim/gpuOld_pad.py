@@ -12,6 +12,7 @@ idx_path = None
 on_axis=False
 force_twocolor=False
 force_index=None
+model_file = None
 
 #@profile
 def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False, 
@@ -130,7 +131,16 @@ def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False,
         Crystal.set_U(rotation)
     
     if idx_path is not None:
+        assert( model_file is None)
         Crystal = utils.open_flex(idx_path)['crystalAB']
+    
+    if model_file is not None:
+        assert( idx_path is None)
+        P = utils.open_flex(model_file)
+        Crystal = P['crystal']
+        #mos_spread_deg = P['mos_spread']
+        #Ncells_abc = P['Ncells_abc']
+    
     if force_twocolor: 
         flux *= 0
         flux[ilow] = 1e12
@@ -213,10 +223,14 @@ if __name__=="__main__":
                     action='store_true', help="whether to apply rotation mat (debugging)" )
   parser.add_argument("--force-twocolor", dest="force2", 
                     action='store_true', help="whether to force two colors" )
-  parser.add_argument('--force-index', dest='force_idx', type=int, default=None, 
+  parser.add_argument('-force-index', dest='force_idx', type=int, default=None, 
                 help="use specific index for spectrum and rotation")
+  parser.add_argument('-force-model', dest='force_model', type=str, default=None, 
+                help="force loading a model from parameters list stored in a pkl file")
+  
   args = parser.parse_args()
- 
+
+  model_file = args.force_model 
   force_index=args.force_idx 
   force_twocolor = args.force2
   on_axis = args.onaxis

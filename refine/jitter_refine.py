@@ -291,7 +291,7 @@ def make_param_list(crystal, detector, beam, Nparam, rot=0.3, cell=0.6, eq=(1,1,
         P['mos_spread'] = shapes[i]['mos_spread']
         if HARD_MOS_SPREAD is not None:
             P['mos_spread'] = HARD_MOS_SPREAD
-        P['FLUX'] = [0.5e12, 0.5e12]
+        P['FLUX'] = [1e12, 1e12]
         P['ENERGIES'] = [8944, 9037]
         P['shape'] = 'gauss'
         P['beam'] = beam
@@ -299,6 +299,7 @@ def make_param_list(crystal, detector, beam, Nparam, rot=0.3, cell=0.6, eq=(1,1,
         P['Nmos'] = HARD_MOS_DOM
         params.append(P)
 
+    return params
 
 #P = sim_utils.PatternFactory( detector=det, beam=B, panel_id=1)
 #F = scattering_factors.get_scattF( B.get_wavelength(), pdb_name="../sim/4bs7.pdb", algo='direct',dmin=1.5, ano_flag=True)
