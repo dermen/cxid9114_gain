@@ -61,7 +61,7 @@ def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False,
   length_um = 2.2
   timelog = False
   if add_background:
-    background = utils.open_flex("background")
+    background = utils.open_flex("background").as_numpy_array()
  
   crystal = microcrystal(Deff_A = Deff_A, length_um = length_um, 
         beam_diameter_um = beam_size_mm*1000, verbose=False) 
@@ -143,8 +143,8 @@ def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False,
     
     if force_twocolor: 
         flux *= 0
-        flux[ilow] = 1e12
-        flux[ihigh]=1e12
+        flux[ilow] = 1e11
+        flux[ihigh]=1e11
     
     simsAB = sim_utils.sim_twocolors2(
         Crystal,
@@ -155,7 +155,7 @@ def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False,
         flux,
         pids = None,
         profile="gauss",
-        oversample=0,
+        oversample=1,
         Ncells_abc = Ncells_abc,
         mos_dom=mos_doms,
         verbose=verbose,
@@ -164,23 +164,26 @@ def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False,
         device_Id =rank,
         beamsize_mm=beamsize_mm,
         exposure_s=exposure_s,
+        accumulate=True,
         boost=crystal.domains_per_crystal)
-    
-    out = np.sum( [ simsAB[i][0] for i in simsAB.keys() if simsAB[i]], axis=0)
-    if out.shape==():
+   
+    if not simsAB:
         continue
-
+    
+    out = simsAB[0] 
+    
     if add_background:
-        out = out + background.as_numpy_array() #.reshape( out.shape)
+        out = out + background
+    
     if add_noise:
-        SIM = Patt.SIM2
+        SIM = nanoBragg(detector=DET, beam=BEAM)
         SIM.raw_pixels = flex.double(out.ravel())
         SIM.detector_psf_kernel_radius_pixels=5;
-        SIM.detector_psf_type=shapetype.Unknown # for CSPAD
+        SIM.detector_psf_type=shapetype.Unknown  # for CSPAD
         SIM.detector_psf_fwhm_mm=0
         SIM.quantum_gain = 1 
         SIM.add_noise()
-        out = SIM.raw_pixels.as_numpy_array()
+        out = SIM.raw_pixels.as_numpy_array().reshape(out.shape)
 
     f = h5py.File(h5_fileout, "w")
     f.create_dataset("bigsim_d9114", 

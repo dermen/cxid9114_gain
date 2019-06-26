@@ -18,6 +18,7 @@ parser.add_argument("-i", dest='i', help='input integration pickle', type=str, r
 parser.add_argument("-o", dest='o', help='outputfile prefix (prefix.npz) ', 
         type=str, default=None)
 parser.add_argument("-plot", dest='plot', action='store_true', help='plot Ymodel vs Yobs')
+parser.add_argument("-anom", dest='anom', action='store_true', help='group h by anom')
 args = parser.parse_args()
 
 SFall = sim_spectra.load_spectra("test_sfall.h5")
@@ -34,7 +35,10 @@ df = pandas.read_pickle(args.i)
 
 Kfact = 1e20
 
-hkl = tuple(map(tuple,  df[['hAnom', 'kAnom', 'lAnom']].values.astype(int)))
+if args.anom:
+    hkl = tuple(map(tuple,  df[['hAnom', 'kAnom', 'lAnom']].values.astype(int)))
+else:
+    hkl = tuple(map(tuple,  df[['h', 'k', 'l']].values.astype(int)))
 hkl_map = {h: i for i, h in enumerate(set(hkl))}
 hkl_idx = [hkl_map[h] for h in hkl]  # assigns a sparse matrix row ID for hkl
 
@@ -81,6 +85,9 @@ for i in hkl_idx:
 df["IA"] = IA_data
 df["IB"] = IB_data
 
+from IPython import embed
+embed()
+
 if args.plot:
     import pylab as plt
     Yobs = df.D
@@ -90,7 +97,6 @@ if args.plot:
     plt.gca().set_yscale("log")
     plt.gca().set_xscale("log")
     plt.show()
-
 
 
 if args.o is not None:

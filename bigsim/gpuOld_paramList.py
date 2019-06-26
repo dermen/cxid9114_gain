@@ -6,6 +6,7 @@ verbose = 0
 overwrite = False
 thresh=1e-2
 force_twocolor=False
+Node = 0
 
 # these cannot change according to input args
 beamsize_mm=0.001
@@ -79,7 +80,7 @@ def run_paramList(Ntrials, odir, tag, rank, n_jobs, pkl_file):
 
   param_list = make_param_list(
             CRYST, DET, BEAM, Ntrials, 
-              rot=0.03, cell=0.1, eq=(1,1,0), 
+              rot=0.09, cell=0.1, eq=(1,1,0), 
             min_Ncell=20, max_Ncell=40, 
               min_mos_spread=0.005, max_mos_spread=0.02)
 
@@ -176,12 +177,14 @@ def run_paramList(Ntrials, odir, tag, rank, n_jobs, pkl_file):
 if __name__=="__main__":
   from joblib import Parallel, delayed
   import sys
+  import glob
+  import os
   from argparse import ArgumentParser 
   import numpy as np
   parser = ArgumentParser("gpu sim pad")
   parser.add_argument("-g", dest="n_gpu",default=1, type=int, help="number of GPUs")
   parser.add_argument("-t", dest="tag", type=str, default="run62", help="tag")
-  parser.add_argument("-o", dest="odir", type=str,default='.', help="output dir")
+  #parser.add_argument("-o", dest="odir", type=str,default='.', help="output dir")
   parser.add_argument("-v", dest="verbose", type=int,default=0, help="verbosity level (0-10)" )
   parser.add_argument("--overwrite", dest="overwrite", 
                     action='store_true', help="whether to overwrite" )
@@ -190,11 +193,13 @@ if __name__=="__main__":
   parser.add_argument("--force-twocolor", dest="force2", 
                     action='store_true', help="whether to force two colors" )
   parser.add_argument('-n', dest='n', type=int, default=1, help="Total number of trials across all jobs (GPUs)")
-  parser.add_argument("-i",dest='i',type=str, required=True, help="input pickle file from the indexing script (dump*.pkl)" )
+  parser.add_argument('-N', dest='nodes', type=int, default=[1,0], nargs=2, help="Number of nodes, and node id")
+  parser.add_argument("-i",dest='i',type=str, required=True, help="input glob of pickle files from the indexing script (dump*.pkl)" )
   parser.add_argument("-thresh", dest='thresh', default=1e-2, type=float, help="ADU threshold for simulation spot finding")
   
   args = parser.parse_args()
-  
+
+  num_nodes, node_id = args.nodes  
   thresh = args.thresh
   n_jobs = args.n_gpu
   Ntrials = args.n
@@ -209,13 +214,18 @@ if __name__=="__main__":
   force_twocolor = args.force2
   overwrite = args.overwrite
   verbose = args.verbose
-  odir = args.odir
-  
-  results = Parallel(n_jobs=n_jobs)( \
-    delayed(run_paramList)(trials_per_gpu[jid],odir=odir, tag=args.tag, \
-            rank=jid, n_jobs=n_jobs, pkl_file=args.i) \
-    for jid in range(n_jobs) )
-   
-  for rank,F1 in enumerate(results):
-    print ("Rank %d: F1score=%.5f"% (rank, F1))
+  pkl_files = glob.glob(args.i)
+
+  pkl_files = pkl_files[node_id::num_nodes]  # divide up if working on multiple nodes
+  for pkl in pkl_files:
+      odir = pkl.replace(".pkl", "_refine")
+      if not os.path.exists(odir):
+          os.makedirs(odir)
+      results = Parallel(n_jobs=n_jobs)( \
+        delayed(run_paramList)(trials_per_gpu[jid],odir=odir, tag=args.tag, \
+                rank=jid, n_jobs=n_jobs, pkl_file=pkl) \
+        for jid in range(n_jobs) )
+       
+      for rank,F1 in enumerate(results):
+        print ("PKL_OCTOPUS: %s Rank %d: F1score=%.5f"% (pkl, rank, F1))
 
