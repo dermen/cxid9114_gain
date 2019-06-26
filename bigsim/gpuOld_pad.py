@@ -13,6 +13,7 @@ on_axis=False
 force_twocolor=False
 force_index=None
 model_file = None
+flux_ave = 2e11
 
 #@profile
 def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False, 
@@ -51,14 +52,13 @@ def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False,
               'space_group_hall_symbol': '-P 4 2'} 
   Crystal = CrystalFactory.from_dict(cryst_descr)
 
-  #offset_adu=30
   mos_spread_deg=0.015
   mos_doms=1000
   beam_size_mm=0.001
   exposure_s=1
   use_microcrystal=True 
   Deff_A = 2200
-  length_um = 2.2
+  length_um = Deff_A/1000.
   timelog = False
   if add_background:
     background = utils.open_flex("background").as_numpy_array()
@@ -177,11 +177,13 @@ def run_sim2smv(Nshot_max, odir, tag, rank, n_jobs, save_bragg=False,
     
     if add_noise:
         SIM = nanoBragg(detector=DET, beam=BEAM)
+        SIM.exposure_s = exposure_s
+        SIM.flux = np.sum(flux)
         SIM.raw_pixels = flex.double(out.ravel())
         SIM.detector_psf_kernel_radius_pixels=5;
         SIM.detector_psf_type=shapetype.Unknown  # for CSPAD
         SIM.detector_psf_fwhm_mm=0
-        SIM.quantum_gain = 1 
+        SIM.quantum_gain = 28 
         SIM.add_noise()
         out = SIM.raw_pixels.as_numpy_array().reshape(out.shape)
 

@@ -77,12 +77,12 @@ def msi(n_jobs, jid, out_dir, tag, glob_str ):
 
 #   --- spotting parameters
     spot_par = find_spots_phil_scope.fetch(source=parse("")).extract()
-    spot_par.spotfinder.threshold.dispersion.global_threshold = 1 
-    spot_par.spotfinder.threshold.dispersion.gain = 1 
-    spot_par.spotfinder.threshold.dispersion.kernel_size = [4,4]
+    spot_par.spotfinder.threshold.dispersion.global_threshold = 40
+    spot_par.spotfinder.threshold.dispersion.gain = 28 
+    spot_par.spotfinder.threshold.dispersion.kernel_size = [2,2]
     spot_par.spotfinder.threshold.dispersion.sigma_strong = 1 
     spot_par.spotfinder.threshold.dispersion.sigma_background = 6 
-    spot_par.spotfinder.filter.min_spot_size = 1 
+    spot_par.spotfinder.filter.min_spot_size = 3
     spot_par.spotfinder.force_2d = True
 
 #   ------ indexing parameters
@@ -216,8 +216,11 @@ if __name__=="__main__":
         help='refine candidate matrices from within stills indexer')
     parser.add_argument('--basis-refine', dest='basis_refine', action='store_true',
         help='refine candidate basis vectors using dials basis vector search')
+    parser.add_argument("--dials-spotter", dest='dials_spot', 
+            action='store_true', help="use DIALS to find spots")
     args = parser.parse_args()
 
+    use_dials_spotter = args.dials_spot
     stills_refine = args.stills_refine
     basis_refine = args.basis_refine
     n_jobs = args.j
