@@ -9,6 +9,7 @@ from cxid9114.sim import sim_utils
 from copy import deepcopy
 import numpy as np
 import scipy.ndimage
+from IPython import embed
 from cxid9114.refine import metrics
 from cctbx import miller, sgtbx
 from cxid9114 import utils
@@ -16,13 +17,12 @@ import pandas
 from scipy.spatial import cKDTree
 from dials.array_family import flex
 
-exp_name = sys.argv[1]
-data_name = sys.argv[2]
-ofile = sys.argv[3]
+#data_name = sys.argv[1]
+ofile = sys.argv[1]
 hkl_tol = .15
 
-run = int(exp_name.split("/")[1].split("run")[1])
-shot_idx = int(exp_name.split("_")[1])
+run = 61 
+shot_idx = 0 
 
 ENERGIES = [parameters.ENERGY_LOW, parameters.ENERGY_HIGH]  # colors of the beams
 FF = [10000, None]  # Setting structure factors takes long time in nanoBragg, so
@@ -35,6 +35,7 @@ FFdat = [utils.open_flex("SA.pkl"), utils.open_flex("SB.pkl")]
 
 FLUX = [1e12, 1e12]  # fluxes of the beams
 
+np.random.seed(41107)
 flux_frac = np.random.uniform(.2, .8)
 chanA_flux = flux_frac * 1e12
 chanB_flux = (1. - flux_frac) * 1e12
@@ -43,25 +44,42 @@ GAIN = np.random.uniform(0.5, 3)
 
 waveA = parameters.ENERGY_CONV / ENERGIES[0]
 waveB = parameters.ENERGY_CONV / ENERGIES[1]
-exp_lst = ExperimentListFactory.from_json_file(exp_name)  # , check_format=False)
-iset = exp_lst.imagesets()[0]
-detector = iset.get_detector(0)
-data = utils.open_flex(data_name)
-beamA = deepcopy(iset.get_beam())
-beamB = deepcopy(iset.get_beam())
+
+#exp_lst = ExperimentListFactory.from_json_file(exp_name)  # , check_format=False)
+#iset = exp_lst.imagesets()[0]
+#detector = iset.get_detector(0)
+#
+
+from cxid9114.bigsim.bigsim_geom import DET,BEAM
+
+beam = utils.open_flex("ref3_beam.pkl")
+DET = utils.open_flex("ref1_det.pkl")
+
+detector = DET
+#data = utils.open_flex(data_name)
+
+from dxtbx.model.crystal import CrystalFactory
+cryst_descr = {'__id__': 'crystal',
+          'real_space_a': (79, 0, 0),
+          'real_space_b': (0, 79, 0),
+          'real_space_c': (0, 0, 38),
+          'space_group_hall_symbol': '-P 4 2'}
+crystalAB = CrystalFactory.from_dict(cryst_descr)
+#crystalAB = data["crystalAB"]
+
+beamA = deepcopy(BEAM)
+beamB = deepcopy(BEAM)
 beamA.set_wavelength(waveA)
 beamB.set_wavelength(waveB)
 
-crystalAB = data["crystalAB"]
-
 simsAB = sim_utils.sim_twocolors2(
-    crystalAB, detector, iset.get_beam(0), FF,
+    crystalAB, detector, BEAM, FF,
     [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
     FLUX, pids=None, Gauss=False, oversample=8, 
     Ncells_abc=(22, 22, 22), mos_dom=1, mos_spread=0.0)
 
 simsData = sim_utils.sim_twocolors2(
-    crystalAB, detector, iset.get_beam(0), FFdat,
+    crystalAB, detector, BEAM, FFdat,
     [parameters.ENERGY_LOW, parameters.ENERGY_HIGH],
     FLUXdat, pids=None, Gauss=False, oversample=8,
     Ncells_abc=(22, 22, 22), mos_dom=1, mos_spread=0.)
@@ -104,10 +122,15 @@ d = {"crystalAB": crystalAB,
 def get_val_at_hkl(hkl, val_map):
     poss_equivs = [i.h() for i in
                    miller.sym_equiv_indices(sg96, hkl).indices()]
+    in_map=False
     for hkl2 in poss_equivs:
         if hkl2 in val_map:  # fast lookup
+            in_map=True
             break
-    return hkl2, val_map[hkl2]
+    if in_map:
+        return hkl2, val_map[hkl2]
+    else:
+        return (None,None,None), -1
 
 # before processing we need to check edge cases
 filt=True
@@ -202,8 +225,8 @@ if filt:
         crystal=crystalAB, returnQ=False)
     #all_treeB = cKDTree(all_HiB)
 
-## CHECK if same HKL, indexed by both colors
-# exists on multiple panels, and if so, delete...
+##  CHECK if same HKL, indexed by both colors
+#   exists on multiple panels, and if so, delete...
     nnAB = all_treeA.query_ball_point(all_HiB, r=1e-7)  
     drop_meA = []
     drop_meB = []
@@ -225,8 +248,6 @@ if filt:
         refl_simB = refl_simB.select(flex.bool(keep_meB))
 
 # ----  Done with edge case filters#
-
-
 
 # reflections per panel
 rpp = spot_utils.refls_by_panelname(refl_data)
@@ -295,6 +316,8 @@ for pid in rpp:
             ylow = max([0, min((y1A, y1B)) - sz])
             yhigh = min([panY, max((y2A, y2B)) + sz])
 
+            if iA==79:
+                embed()
             # integrate me if I am in the bounding box!
             int_me = np.where((xlow < x) & (x < xhigh) & (ylow < y) & (y < yhigh))[0]
             if not int_me.size:
@@ -313,6 +336,8 @@ for pid in rpp:
             (h, k, l) = HiA[iA]  # NOTE: same for A and B channels
             (h2, k2, l2), FA = get_val_at_hkl((h, k, l), HA_val_map)
             _, FB = get_val_at_hkl((h, k, l), HB_val_map)  # NOTE: no need to return h2,k2,l2 twice
+            if FA ==-1 or FB==-1:
+                continue
 
             DATA['h'].append(h)
             DATA['k'].append(k)
@@ -357,6 +382,8 @@ for pid in rpp:
             (h2, k2, l2), FA = get_val_at_hkl((h, k, l), HA_val_map)
             _, FB = get_val_at_hkl((h, k, l), HB_val_map)  # NOTE: no need to return h2,k2,l2 twice
 
+            if FA ==-1 or FB==-1:
+                continue
             DATA['h'].append(h)
             DATA['k'].append(k)
             DATA['l'].append(l)
@@ -404,6 +431,8 @@ for pid in rpp:
             (h2, k2, l2), FB = get_val_at_hkl((h, k, l), HB_val_map)
             _, FA = get_val_at_hkl((h, k, l), HA_val_map)  # NOTE: no need to return h2,k2,l2 twice
 
+            if FA ==-1 or FB==-1:
+                continue
             DATA['h'].append(h)
             DATA['k'].append(k)
             DATA['l'].append(l)
@@ -433,6 +462,6 @@ df["LB"] = d['flux_data'][1]
 df['K'] = FF[0] ** 2 * FLUX[0]
 df["rhs"] = df.gain * (df.IA * df.LA * (df.PA / df.K) + df.IB * df.LB * (df.PB / df.K))
 df["lhs"] = df.D
-
+embed()
 df.to_pickle(ofile)
 

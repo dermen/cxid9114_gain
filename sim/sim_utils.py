@@ -282,10 +282,10 @@ def simulate_xyscan_result(scan_data_file, prefix=None):
 
 
 class PatternFactory:
-
     def __init__(self, crystal=None, detector=None, beam=None,
                  Ncells_abc=(10,10,10), Gauss=False, oversample=0, panel_id=0,
-                 recenter=True, verbose=10, profile=None, device_Id=None):
+                 recenter=True, verbose=10, profile=None, device_Id=None,
+                 beamsize_mm=None, exposure_s=None, flux=None):
         """
         :param crystal:  dials crystal model
         :param detector:  dials detector model
@@ -305,7 +305,8 @@ class PatternFactory:
         if oversample > 0:
             self.SIM2.oversample = oversample
         self.SIM2.polarization = 1  # polarization fraction ?
-        self.SIM2.F000 = 10  # should be number of electrons ?
+        self.SIM2.Ncells_abc = Ncells_abc  # important to set this First!
+        self.SIM2.F000 = 0  # should be number of electrons ?
         self.SIM2.default_F = 0
         self.SIM2.Amatrix = Amatrix_dials2nanoBragg(crystal)  # sets the unit cell
         if Gauss:
@@ -325,10 +326,17 @@ class PatternFactory:
        
         if device_Id is not None: 
             self.SIM2.device_Id=device_Id
+            self.SIM2.timelog=False
         self.SIM2.progress_meter = False
-        self.SIM2.flux = 1e14
-        self.SIM2.beamsize_mm = 0.004
-        self.SIM2.Ncells_abc = Ncells_abc
+        if flux is not None:
+            self.SIM2.flux = flux
+        else:
+            self.SIM2.flux = 1e14
+        if beamsize_mm is not None:
+            self.SIM2.beamsize_mm = beamsize_mm
+        else:
+            self.SIM2.beamsize_mm = 0.004
+
         self.SIM2.interpolate = 0
         self.SIM2.progress_meter = False
         self.SIM2.verbose = verbose
@@ -387,8 +395,8 @@ class PatternFactory:
             mosaic_domains = 2  # default
         if mosaic_spread is None:
             mosaic_spread = 0.1
-        self.SIM2.mosaic_domains = mosaic_domains  # from LS49
         self.SIM2.mosaic_spread_deg = mosaic_spread  # from LS49
+        self.SIM2.mosaic_domains = mosaic_domains  # from LS49
         self.SIM2.set_mosaic_blocks(mosaic_blocks(self.SIM2.mosaic_spread_deg,
                                                     self.SIM2.mosaic_domains))
 
@@ -440,24 +448,26 @@ class PatternFactory:
             self.SIM2.Fhkl = F.amplitudes()
         elif F is not None:
             self.SIM2.default_F = F
-        self.SIM2.Amatrix = Amatrix_dials2nanoBragg(crystal)
+        if crystal is not None:
+            self.SIM2.Amatrix = Amatrix_dials2nanoBragg(crystal)
         self.SIM2.raw_pixels *= 0
         self.SIM2.region_of_interest = self.FULL_ROI
 
     def sim_rois(self, rois, reset=True, cuda=False, omp=False, add_water=False,
-                 add_noise=False, water_par=None, noise_par=None, boost=1):
-        for roi in rois:
-            self.SIM2.region_of_interest = roi
-            if cuda:
-                self.SIM2.add_nanoBragg_spots_cuda()
-            elif omp:
-                from boost.python import streambuf  # will deposit printout into dummy StringIO as side effect
-                from six.moves import StringIO
-                self.SIM2.add_nanoBragg_spots_nks(streambuf(StringIO()))
-            else:
-                self.SIM2.add_nanoBragg_spots()
+                 add_noise=False, water_par=None, noise_par=None, boost=1, add_spots=True):
+        if add_spots:
+            for roi in rois:
+                self.SIM2.region_of_interest = roi
+                if cuda:
+                    self.SIM2.add_nanoBragg_spots_cuda()
+                elif omp:
+                    from boost.python import streambuf  # will deposit printout into dummy StringIO as side effect
+                    from six.moves import StringIO
+                    self.SIM2.add_nanoBragg_spots_nks(streambuf(StringIO()))
+                else:
+                    self.SIM2.add_nanoBragg_spots()
 
-        self.SIM2.raw_pixels*=boost
+            self.SIM2.raw_pixels = self.SIM2.raw_pixels*boost
         
         if add_water:
             water_scatter = flex.vec2_double(
@@ -467,11 +477,9 @@ class PatternFactory:
             self.SIM2.amorphous_sample_thick_mm = 0.004  # typical GDVN
             self.SIM2.amorphous_density_gcm3 = 1
             self.SIM2.amorphous_molecular_weight_Da = 18
-            #self.SIM2.flux = 1e12
-            #self.SIM2.beamsize_mm = 0.003  # square (not user specified)
             self.SIM2.exposure_s = 1.0  # multiplies flux x exposure
-            self.SIM2.add_background()
             self.SIM2.region_of_interest = self.FULL_ROI
+            self.SIM2.add_background()
 
         if add_noise:
             self.SIM2.add_noise()
@@ -542,14 +550,24 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                    div_tup=(0.,0.), disp_pct=0., mos_dom=2, mos_spread=0.15, profile=None,
                    roi_pp=None, counts_pp=None, cuda=False, omp=False, gimmie_Patt=False,
                    add_water=False, add_noise=False, boost=1, device_Id=0,
-                   beamsize_mm=None, exposure_s=None):
+                   beamsize_mm=None, exposure_s=None, accumulate=False, only_water=False, add_spots=True):
+
+    print ("Rank %d: HERE!" % device_Id)
     Npan = len(detector)
     Nchan = len(energies)
 
+    if only_water:
+        add_spots = False
+        add_water = True
+    else:
+        add_spots = True
     # initialize output form
     panel_imgs = {}
     for i_en in range(Nchan):
-        panel_imgs[i_en] = []
+        if accumulate:
+            panel_imgs = [None]*Npan
+        else:
+            panel_imgs[i_en] = []
 
     if pids is None:
         pids = range(Npan)
@@ -563,17 +581,24 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                                Gauss=Gauss,
                                verbose=verbose,
                                Ncells_abc=Ncells_abc,
-                               oversample=oversample, profile=profile, 
+                               oversample=oversample, 
+                               profile=profile, 
+                               beamsize_mm=beamsize_mm,
+                               exposure_s=exposure_s,
+                               flux=np.sum(fluxes),
                                device_Id=device_Id)
-        if beamsize_mm is not None:
-            PattF.SIM2.beamsize_mm=beamsize_mm
-        if exposure_s is not None:
-            PattF.SIM2.exposure_s=exposure_s
-        PattF.adjust_mosaicity(mos_dom, mos_spread)
+        
+        if not only_water:
+            PattF.adjust_mosaicity(mos_dom, mos_spread)
+        else:
+            PattF.adjust_mosaicity(1,0)
+       
+        print ii, mos_dom, mos_spread, Ncells_abc, oversample 
         PattF.adjust_dispersion(disp_pct)
         PattF.adjust_divergence(div_tup)
+        
         for i_en in range(Nchan):
-            if fluxes[i_en] ==0:
+            if fluxes[i_en] == 0:
                 continue
             
             PattF.primer(crystal=crystal,
@@ -582,16 +607,29 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                          flux=fluxes[i_en])
 
             if roi_pp is None:
-                color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], reset=True, cuda=cuda, omp=omp,
-                                           add_water=add_water, add_noise=add_noise, boost=1)
+                color_img = PattF.sim_rois(rois=[PattF.FULL_ROI], 
+                            reset=True, cuda=cuda, omp=omp,
+                            add_water=add_water, add_noise=False, add_spots=add_spots,
+                            boost=boost)
             else:
-                color_img = PattF.sim_rois(rois=roi_pp[ii], reset=True, cuda=cuda, omp=omp,
-                                           add_water=add_water, add_noise=add_noise,boost=1)
+                color_img = PattF.sim_rois(rois=roi_pp[ii], reset=True, 
+                            cuda=cuda, omp=omp,
+                            add_water=add_water, 
+                            add_spots=add_spots,
+                            add_noise=False,boost=boost)
                 where_finite = counts_pp[ii] > 0
                 if np.any(where_finite):
                     color_img[where_finite] /= counts_pp[ii][where_finite]
 
-            panel_imgs[i_en].append(color_img)
+            if accumulate:
+                if panel_imgs[i_pan] is None:
+                    panel_imgs[i_pan] = color_img
+                else:
+                    panel_imgs[i_pan] += color_img
+            else:
+                panel_imgs[i_en].append(color_img)
+
+        
     if gimmie_Patt:
         return panel_imgs, PattF
     else:
