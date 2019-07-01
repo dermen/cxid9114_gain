@@ -43,7 +43,7 @@ def gen_truth_for_data():
     return {"IAprm": IAprm, "IBprm": IBprm}
 
 
-def gen_data(noise_lvl=0, Nshot_max = None, load_hkl=False):
+def gen_data(noise_lvl=0, Nshot_max = None, load_hkl=False, fname=None):
 
     #K = 10000**2 * 1e12
     #df = pandas.read_hdf("r62_simdata2_fixed_oversamp_labeled.hdf5","data")
@@ -60,14 +60,19 @@ def gen_data(noise_lvl=0, Nshot_max = None, load_hkl=False):
     #np.savez("data", ydata=ydata, gains=gains, FAdat=FAdat, FVdata=FBdat, PAdata=PAdata,
     #         PBdata=PBdata,LAdata=LAdata, LBdata=LBdata, adata=adata, gdata=gdata )
 
-    data = np.load("data.npz")
+    if fname is None:
+        data = np.load("data.npz")
+    else:
+        data=np.load(fname)
 
     gdata = data["gdata"]
+    adata = data["adata"]
     if Nshot_max is not None:
         sel = gdata < Nshot_max
     else:
         sel = np.ones(gdata.shape[0], bool)
     gdata = data["gdata"][sel]
+    adata = data["adata"][sel]
     ydata = data["ydata"][sel]
 
     gains = data["gains"][sel]
@@ -79,14 +84,19 @@ def gen_data(noise_lvl=0, Nshot_max = None, load_hkl=False):
 
     PAdata = data["PAdata"][sel]
     PBdata = data["PBdata"][sel]
-    FAdat = data["FAdat"][sel]
-    FBdat = data["FVdata"][sel]  # NOTE: type in stored data table
+
+    # NOTE: old way
+    #FAdat = data["FAdat"][sel]
+    #FBdat = data["FVdata"][sel]  # NOTE: type in stored data table
+
+    FAdat = data["FAdata"][sel]
+    FBdat = data["FBdata"][sel]
 
     # remap adata and gdata
     if Nshot_max is not None:
-        amp_remap = {a:i_a for i_a, a in enumerate(set(adata))}
+        amp_remap = {a: i_a for i_a, a in enumerate(set(adata))}
         adata = np.array([amp_remap[a] for a in adata])
-        gain_remap = {g:i_g for i_g,g in enumerate(set(gdata))}
+        gain_remap = {g: i_g for i_g, g in enumerate(set(gdata))}
         gdata = np.array([gain_remap[g] for g in gdata])
 
     Nmeas = len(ydata)
@@ -105,10 +115,11 @@ def gen_data(noise_lvl=0, Nshot_max = None, load_hkl=False):
     else:
         h = k = l = None
 
-    return {"Yobs": ydata, "LA":LAdata, "LB":LBdata, "IA": FAdat**2,
-            "IB":FBdat**2, "G": gains, "Aidx": adata, "Gidx": gdata,
+    return {"Yobs": ydata, "LA":LAdata, "LB":LBdata, "IA": np.abs(FBdat)**2,
+            "IB": np.abs(FAdat)**2 , "G": gains, "Aidx": adata, "Gidx": gdata,
             "PA": PAdata, "PB": PBdata, "h": h, "k": k, "l": l,
             "GA": GAdata, "GB": GBdata}
+
 
 
 def guess_data(data, perturbate=True, perturbate_factor=.1):
@@ -142,8 +153,8 @@ def guess_data(data, perturbate=True, perturbate_factor=.1):
         _p = perturbate_factor
         AmpA_guess = np.exp(np.random.uniform( np.log(Avals)-_p, np.log(Avals)+_p, Namp) )
         AmpB_guess = np.exp(np.random.uniform( np.log(Bvals)-_p, np.log(Bvals)+_p, Namp) )
-        GainA_guess = np.random.uniform(data['GA'].min(), data["GA"].max(), Ngain)  # going in blind here on the gain
-        GainB_guess = np.random.uniform(data['GB'].min(), data["GB"].max(), Ngain)  # going in blind here on the gain
+        GainA_guess = np.random.uniform(data['GA'].min()*0.1, data["GA"].max()*10, Ngain)  # going in blind here on the gain
+        GainB_guess = np.random.uniform(data['GB'].min()*0.1, data["GB"].max()*10, Ngain)  # going in blind here on the gain
     else:
         AmpA_guess = Avals
         AmpB_guess = Bvals

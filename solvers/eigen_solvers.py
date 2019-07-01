@@ -1,3 +1,10 @@
+#!/usr/bin/env libtbx.python
+from argparse import ArgumentParser
+parser = ArgumentParser()
+parser.add_argument('-i', help='input file', type=str, default=None)
+parser.add_argument("-sim", help='whether data is simulated', action='store_true')
+args = parser.parse_args()
+
 import gen_data
 import numpy as np
 from cxid9114.solvers import solvers
@@ -176,8 +183,8 @@ class eigen_solver(solvers.LBFGSsolver):
       pass
 
 
-def simdata_pipeline():
-    data = gen_data.gen_data(load_hkl=False)
+def simdata_pipeline(fname=None):
+    data = gen_data.gen_data(load_hkl=False,fname=fname)
 
     #data['LA'] = np.random.normal(data['LA'], scale=data['LA'].std()*0.05)
     #data['LB'] = np.random.normal(data['LB'], scale=data['LB'].std()*0.02)
@@ -185,6 +192,8 @@ def simdata_pipeline():
     guesses = gen_data.guess_data(data, perturbate=True, perturbate_factor=1)
 
     truth = gen_data.guess_data(data, perturbate=False)
+    from IPython import embed
+    embed()
     print("Loaded")
     # t1_lb = time.time()
     # lbfgs_solver = solvers.LogIsolverCurve(
@@ -226,9 +235,9 @@ def realdata_pipeline():
     embed()
 
 if __name__ == "__main__":
-    import sys
-    if sys.argv[1] == "sim":
-        simdata_pipeline()
-    elif sys.argv[1] == "real":
-        realdata_pipeline()
+
+    if args.sim:
+        simdata_pipeline(args.i)
+    else:
+        realdata_pipeline(args.i)
 
