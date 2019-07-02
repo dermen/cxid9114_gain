@@ -27,8 +27,8 @@ class LBFGSsolver(object):
         self.LA = flex.double(np.ascontiguousarray(data["LA"]))# NOTE expanded
         self.LB = flex.double(np.ascontiguousarray(data["LB"]))# NOTE expanded
 
-        self.Nhkl = len(set(data['Aidx']))  # self.IAprm_truth)
-        self.Ns = len(set(data['Gidx']))  ##self.Gprm_truth)
+        self.Nhkl = len(self.IAprm_truth)
+        self.Ns = len(self.Gprm_truth)
         self.Nmeas = len(self.Yobs)
 
         self.Aidx = flex.size_t(np.ascontiguousarray(data["Aidx"]))
@@ -164,12 +164,12 @@ class LogIsolverCurve(lbfgs_with_curvatures_mix_in, LBFGSsolver):
         if self.IAprm_truth is not None:
             self.IAprm_truth = flex.log(self.IAprm_truth)
             self.IBprm_truth = flex.log(self.IBprm_truth)
-            self.Gprm_truth = flex.log(self.Gprm_truth)
+            #self.Gprm_truth = flex.log(self.Gprm_truth)
 
         IAx = flex.log(self.x[:self.Nhkl])
         IBx = flex.log(self.x[self.Nhkl:2*self.Nhkl])
-        #Gx = self.x[2*self.Nhkl:]
-        Gx = flex.log(self.x[2*self.Nhkl:])
+        Gx = self.x[2*self.Nhkl:]
+        #Gx = flex.log(self.x[2*self.Nhkl:])
         self.x = IAx.concatenate(IBx)
         self.x = self.x.concatenate(Gx)
 
