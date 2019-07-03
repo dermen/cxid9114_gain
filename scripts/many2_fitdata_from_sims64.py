@@ -3,8 +3,6 @@
 import argparse
 import os
 parser = argparse.ArgumentParser("make dadat")
-parser.add_argument("-iglob", dest='datanames', type=str, help="name of data file",
-    required=True )
 parser.add_argument("-o", dest='ofile', type=str, help="file out")
 parser.add_argument("-odir", dest='odir', type=str, help="file outdir", default="_sims64res")
 parser.add_argument("--gpu", dest='gpu', action='store_true', help='sim with GPU')
@@ -31,6 +29,8 @@ parser.add_argument("-g", dest='ngpu', type=int, default=1,help='number of gpu' 
 parser.add_argument("--overwrite", dest='overwrite',action='store_true',help='overwrite files' )
 parser.add_argument("--write-img", dest='write_img', action='store_true')
 parser.add_argument('-N', dest='nodes', type=int, default=[1,0], nargs=2, help="Number of nodes, and node id")
+parser.add_argument("-trials", dest='num_trials', help='trials per worker', 
+    type=int, default=1 )
 args = parser.parse_args()
 
 
@@ -38,7 +38,6 @@ use_dials_spotter = args.dials_spot
 smi_stride = 3
 thresh=args.thresh
 Gauss = args.Gauss
-iglob = args.datanames
 cuda = args.gpu
 add_background = args.add_bg
 add_noise = args.add_noise
@@ -64,6 +63,57 @@ oversample = 0
 
 from joblib import Parallel,delayed
 
+
+def random_rotation(deflection=1.0, randnums=None):
+    r"""
+    Creates a random rotation matrix.
+
+    TODO: documentation
+
+    Arguments:
+        deflection (float): the magnitude of the rotation. For 0, no rotation; for 1, competely random
+                            rotation. Small deflection => small perturbation.
+        randnums (numpy array): 3 random numbers in the range [0, 1]. If `None`, they will be auto-generated.
+
+    Returns:
+        (numpy array) Rotation matrix
+    """
+    import numpy as np
+    # from
+    # http://www.realtimerendering.com/resources/GraphicsGems/gemsiii/rand_rotation.c
+    if randnums is None:
+        randnums = np.random.uniform(size=(3,))
+
+    theta, phi, z = randnums
+
+    theta = theta * 2.0 * deflection * np.pi  # Rotation about the pole (Z).
+    phi = phi * 2.0 * np.pi  # For direction of pole deflection.
+    z = z * 2.0 * deflection  # For magnitude of pole deflection.
+
+    # Compute a vector V used for distributing points over the sphere
+    # via the reflection I - V Transpose(V).  This formulation of V
+    # will guarantee that if x[1] and x[2] are uniformly distributed,
+    # the reflected points will be uniform on the sphere.  Note that V
+    # has length sqrt(2) to eliminate the 2 in the Householder matrix.
+
+    r = np.sqrt(z)
+    vec = (
+        np.sin(phi) * r,
+        np.cos(phi) * r,
+        np.sqrt(2.0 - z)
+    )
+
+    st = np.sin(theta)
+    ct = np.cos(theta)
+
+    rot = np.array(((ct, st, 0), (-st, ct, 0), (0, 0, 1)))
+
+    # Construct the rotation matrix  ( V Transpose(V) - I ) R.
+
+    mat = (np.outer(vec, vec) - np.eye(3)).dot(rot)
+    return mat.reshape(3, 3)
+
+
 def main(rank):
 
     device_Id = rank % ngpu
@@ -86,6 +136,7 @@ def main(rank):
    
     from simtbx.nanoBragg import shapetype, nanoBragg 
     from libtbx.phil import parse 
+    from scitbx.matrix import sqr
     import dxtbx
     from dxtbx.model.experiment_list import ExperimentListFactory
     from dxtbx.model.crystal import CrystalFactory
@@ -103,6 +154,7 @@ def main(rank):
     from cctbx import miller, sgtbx
     from cxid9114 import utils
     from cxid9114.bigsim import sim_spectra
+    from cxid9114.refine.jitter_refine import make_param_list
 
     spot_par = find_spots_phil_scope.fetch(source=parse("")).extract()
     spot_par.spotfinder.threshold.dispersion.global_threshold = 40
@@ -115,12 +167,12 @@ def main(rank):
 
     odir = args.odir
     odirj = os.path.join(odir, "job%d" % worker_Id)
-    all_pkl_files = [s for sl in \
-        [ files for _,_, files in  os.walk(odir)]\
-            for s in sl if s.endswith("pkl")]
+    #all_pkl_files = [s for sl in \
+    #    [ files for _,_, files in  os.walk(odir)]\
+    #        for s in sl if s.endswith("pkl")]
     
-    print "Found %d pkl files already in %s!" \
-        % (len(all_pkl_files), odir)
+    #print "Found %d pkl files already in %s!" \
+    #    % (len(all_pkl_files), odir)
 
     if not os.path.exists(odirj):
         os.makedirs(odirj)
@@ -131,12 +183,20 @@ def main(rank):
     ENERGIES = [parameters.ENERGY_LOW, parameters.ENERGY_HIGH]  # colors of the beams
     FF = [10000, None]  
 
+    cryst_descr = {'__id__': 'crystal',
+                  'real_space_a': (79, 0, 0),
+                  'real_space_b': (0, 79, 0),
+                  'real_space_c': (0, 0, 38),
+                  'space_group_hall_symbol': '-P 4 2'}
+    crystalAB = CrystalFactory.from_dict(cryst_descr)
+
     sfall_main = sim_spectra.load_spectra("../bigsim/test_sfall.h5")
     FFdat = [sfall_main[19], sfall_main[110]]
 
     FLUX = [1e11, 1e11]  # fluxes of the beams
 
-    np.random.seed(41107)
+    #np.random.seed(41107)
+    np.random.seed()
     chanA_flux = 1e11 
     chanB_flux = 1e11 
     FLUXdat = [chanA_flux, chanB_flux]
@@ -148,27 +208,17 @@ def main(rank):
     #from cxid9114.bigsim.bigsim_geom import DET,BEAM
     DET = utils.open_flex('ref1_det.pkl')
     BEAM = utils.open_flex('ref3_beam.pkl')
-
     detector = DET
     
-    data_names = glob.glob(iglob)
-    data_names_rank = np.array_split(data_names, kernels_per_gpu*ngpu*num_nodes)[worker_Id]
-    Ndatas = len( data_names_rank)
     print("Rank %d Begin" % worker_Id)
-    for i_data, data_name in enumerate(data_names_rank):
+    for i_data in range( args.num_trials):
         pklname = "%s_rank%d_data%d.pkl" % (ofile, worker_Id, i_data)
-        #if os.path.exists(pklname) and not overwrite:
-        if pklname in all_pkl_files and not overwrite:
-            print ("Rank %d; Pkl name exists! %s" % (worker_Id, pklname))
-            continue
-        
-        pklname = os.path.join( odirj, pklname)
-        
-        print("<><><><><><><")
-        print("Job %d data name %s (%d / %d)" % ( worker_Id, data_name, i_data+1, Ndatas ))
-        print("<><><><><><><")
-        
+        pklname = os.path.join( odirj, pklname) 
 
+        print("<><><><><><><")
+        print("Job %d:  trial  %d / %d" % ( worker_Id, i_data+1, args.num_trials ))
+        print("<><><><><><><")
+        
         if (worker_Id==0 and i_data % smi_stride==0):
             print("GPU status")
             os.system("nvidia-smi")
@@ -178,43 +228,56 @@ def main(rank):
             mem_usg= """ps -U dermen --no-headers -o rss | awk '{ sum+=$1} END {print int(sum/1024) "MB consumed by CPU user"}'"""
             os.system(mem_usg)
 
-        data = utils.open_flex(data_name)
         beamA = deepcopy(BEAM)
         beamB = deepcopy(BEAM)
         beamA.set_wavelength(waveA)
         beamB.set_wavelength(waveB)
 
-        crystalAB = data["crystalAB"]
+        np.random.seed()
+        crystalAB = CrystalFactory.from_dict(cryst_descr)
+        randnums = np.random.random(3)
+        Rrand = random_rotation(1, randnums)
+        crystalAB.set_U(Rrand.ravel())
+        
+        #pert = np.random.uniform(0.0001/2/np.pi, 0.0003 / 2. /np.pi)
+        #print("PERT %f" % pert)
+        #Rsmall = random_rotation(0.00001, randnums ) #pert)
+       
+       
+        params_lst = make_param_list(crystalAB, DET, BEAM, 
+            1, rot=0.08, cell=.0000001, eq=(1,1,0),
+            min_Ncell=23, max_Ncell=24, 
+            min_mos_spread=0.02, 
+            max_mos_spread=0.08)
+        Ctruth = params_lst[0]['crystal']
+          
+        print Ctruth.get_unit_cell().parameters()
+        print crystalAB.get_unit_cell().parameters()
+         
+        #Ctruth =  CrystalFactory.from_dict(cryst_descr)
+        #Ctruth.set_U(Rsmall.ravel())
+        init_comp = rotation_matrix_differences((Ctruth, crystalAB))
+        init_rot = float(init_comp.split("\n")[-2].split()[2])
+        #U = crystalAB.get_U()
 
-        img_f = data['img_f']
-        if rel_dir is not None:
-            img_f = os.path.join( rel_dir, img_f)
-            if not os.path.exists(img_f):
-                print ("Image file %s does not exists" % img_f)
-                sys.exit()
-        loader = dxtbx.load(img_f)
-
-        cryst_descr = {'__id__': 'crystal',
-                      'real_space_a': loader._h5_handle["real_space_a"][()],
-                      'real_space_b': loader._h5_handle["real_space_b"][()],
-                      'real_space_c': loader._h5_handle["real_space_c"][()],
-                      'space_group_hall_symbol': \
-                            loader._h5_handle["space_group_hall_symbol"][()]}
+        #img_f = data['img_f']
+        #if rel_dir is not None:
+        #    img_f = os.path.join( rel_dir, img_f)
+        #    if not os.path.exists(img_f):
+        #        print ("Image file %s does not exists" % img_f)
+        #        sys.exit()
+        #loader = dxtbx.load(img_f)
 
         if use_data_spec:
-            print "Using a real spectrum to simulate the data"
-            data_fluxes = loader._h5_handle["fluxes"][()]
-            data_energies = loader._h5_handle["energies"][()]
-            data_ff = sfall_main 
+            print "NOT IMPLEMENTED, Using a phony 2col spectrum to simulate the data"
+            data_fluxes = FLUXdat
+            data_energies = [parameters.ENERGY_LOW, parameters.ENERGY_HIGH]
+            data_ff = FFdat
         else:
             print "Using a phony two color spectrum to simulate the data"
             data_fluxes = FLUXdat
             data_energies = [parameters.ENERGY_LOW, parameters.ENERGY_HIGH]
             data_ff = FFdat
-
-        Ctruth = CrystalFactory.from_dict(cryst_descr)
-        init_comp = rotation_matrix_differences((Ctruth, crystalAB))
-        init_rot = float(init_comp.split("\n")[-2].split()[2])
 
         print  ("Truth crystal Misorientation deviation: %f deg" % init_rot )
         if args.truth_cryst:
@@ -223,7 +286,7 @@ def main(rank):
         else:
             print "Not using truth crystal"
             dataCryst = crystalAB
-
+        
         if not make_background:
             print "SIMULATING Flat-Fhkl IMAGES"
             simsAB = sim_utils.sim_twocolors2(
@@ -315,7 +378,7 @@ def main(rank):
             print ("Found %d refls using threshold" % len(refl_data))
         
         if len(refl_data)==0:
-            print "Rank %d: No reflections found! %s" % (worker_Id, data_name)
+            print "Rank %d: No reflections found! " % (worker_Id)
             continue
         
         residA = metrics.check_indexable2(
@@ -713,7 +776,7 @@ def main(rank):
         df['K'] = FF[0] ** 2 * FLUX[0]
         df["rhs"] = df.gain * (df.IA * df.LA * (df.PA / df.K) + df.IB * df.LB * (df.PB / df.K))
         df["lhs"] = df.D
-        df['data_name'] = data_name
+        #df['data_name'] = data_name
         df['init_rot'] = init_rot
         df.to_pickle(pklname)
 
