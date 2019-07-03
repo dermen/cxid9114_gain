@@ -1,6 +1,14 @@
-import gen_data
+#!/usr/bin/env libtbx.python
+
+from argparse import ArgumentParser
+parser = ArgumentParser("eigen solvers")
+parser.add_argument("-i", type=str, help='input_file')
+parser.add_argument("-sim", action='store_true')
+args = parser.parse_args()
+
+import time
 import numpy as np
-from cxid9114.solvers import solvers
+from cxid9114.solvers import solvers, gen_data
 import cxid9114
 from scitbx.lstbx import normal_eqns_solving
 from scitbx.array_family import flex
@@ -83,7 +91,7 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
 
 class eigen_solver(solvers.LBFGSsolver):
 
-  def __init__(self, conj_grad=True, plot=False, plot_truth=True, *args, **kwargs):
+  def __init__(self, conj_grad=True, weights=None,plot_truth=False, plot=False,  *args, **kwargs):
     solvers.LBFGSsolver.__init__(self, *args, **kwargs)  # NOTE: do it with lbfgs=False
     # ^ brings in Yobs, LA, LB, PA, PB, Nhkl, Ns, Nmeas,   Aidx, Gidx
 
@@ -95,12 +103,12 @@ class eigen_solver(solvers.LBFGSsolver):
         self.x_truth = (self.IAprm_truth.concatenate(self.IBprm_truth)).concatenate(self.Gprm_truth)
 
     self.x_init = flex.double(np.ascontiguousarray(self.guess["IAprm"])).concatenate(
-        flex.double(np.ascontiguousarray(self.guess["IBprm"]))).concatenate(flex.double(np.ascontiguousarray(self.guess["Gprm"])))
+      flex.double(np.ascontiguousarray(self.guess["IBprm"]))).concatenate(flex.double(np.ascontiguousarray(self.guess["Gprm"])))
     assert (len(self.x_init) == self.Nhkl * 2 + self.Ns)
 
     IAx = flex.log(self.x_init[:self.Nhkl])
     IBx = flex.log(self.x_init[self.Nhkl:2 * self.Nhkl])
-    Gx = flex.log(self.x_init[2 * self.Nhkl:]) - 1
+    Gx = self.x_init[2 * self.Nhkl:]
 
     self.x_init = IAx.concatenate(IBx)
     self.x_init = self.x_init.concatenate(Gx)
@@ -108,13 +116,19 @@ class eigen_solver(solvers.LBFGSsolver):
     self.counter = 0
 
     # set dummie weights for now
-    self.Wobs = flex.double(np.ones(len(self.Yobs)))
+    if weights is None:
+        self.Wobs = flex.double(np.ones(len(self.Yobs)))
+    else:
+        self.Wobs = weights
+
     if plot_truth:
         try:
             truth = self.x_truth
         except AttributeError as error:
             print(error)
             truth = None
+    else:
+        truth=None
 
     self.helper = eigen_helper(initial_estimates=self.x_init, Nhkl=self.Nhkl, plot=plot, truth=truth)
     self.helper.eigen_wrapper.conj_grad = conj_grad
@@ -122,21 +136,24 @@ class eigen_solver(solvers.LBFGSsolver):
       self.Yobs, self.Wobs, self.Aidx, self.Gidx, self.PA, self.PB, self.LA, self.LB, self.Nhkl, self.Ns)
 
     self.helper.restart()
-    _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
+
+    try:
+      _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
                non_linear_ls=self.helper,
                n_max_iterations=200,
                track_all=True,
                step_threshold=0.0001)
+    except KeyboardInterrupt:
+      pass
     print "End of minimization: Converged", self.helper.counter, "cycles"
     print self.helper.get_eigen_summary()
     print "Converged functional: ", self.helper.functional(self.helper.x)
 
 
 
-
 def simdata_pipeline():
-    data = gen_data.gen_data(load_hkl=False)
-    guesses = gen_data.guess_data(data, perturbate=True, set_model4=False, set_model5=False, perturbate_factor=1)
+    data = gen_data.gen_data(args.i, load_hkl=False)
+    guesses = gen_data.guess_data(data, perturbate=True, perturbate_factor=1)
     truth = gen_data.guess_data(data, perturbate=False)
     print("Loaded")
 
@@ -149,8 +166,24 @@ def simdata_pipeline():
     # embed()
 
     t1_eig = time.time()
-    ES = eigen_solver(data=data, guess=guesses, truth=truth, lbfgs=False, conj_grad=True, plot=True)
+    ES = eigen_solver(data=data, guess=guesses, truth=truth, lbfgs=False, conj_grad=True,
+                        plot=False) #weights=data['weights'])
     t2_eig = time.time()
+
+    IB = np.exp(ES.helper.x[ES.Nhkl:2*ES.Nhkl].as_numpy_array())
+    IA = np.exp(ES.helper.x[:ES.Nhkl].as_numpy_array())
+    IAtru = np.exp(ES.IAprm_truth.as_numpy_array())
+    IBtru = np.exp(ES.IBprm_truth.as_numpy_array())
+    import pylab as plt
+    plt.plot(IA, IAtru, '.')
+    plt.plot(IB, IBtru, '.')
+    ax = plt.gca()
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    plt.xlim(1e-1, 1e7)
+    plt.ylim(1e-1, 1e7)
+    plt.plot(IAtru, IBtru, '.' )
+    plt.show()
 
     embed()
     for i in range(10):
@@ -176,9 +209,8 @@ def realdata_pipeline():
     embed()
 
 if __name__ == "__main__":
-    import sys
-    if sys.argv[1] == "sim":
+    if args.sim:
         simdata_pipeline()
-    elif sys.argv[1] == "real":
+    else:
         realdata_pipeline()
 
