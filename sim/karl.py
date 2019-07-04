@@ -1,26 +1,28 @@
+#!/usr/bin/env libtbx.python
+
+from argparse import ArgumentParser
+parser = ArgumentParser("I am karl")
+parser.add_argument("-i", help="input karl", type=str)
+parser.add_argument("-o", help='output name', type=str)
+parser.add_argument("-e", help='energy in eV', type=float)
+args =parser.parse_args()
 
 from itertools import izip
 
-from IPython import embed
 import numpy as np
 cos = np.cos
 sin = np.sin
 
-from cctbx import crystal, miller, sgtbx
-from cctbx.array_family import flex
 from scitbx import matrix
 
 from cxid9114 import utils
 from cxid9114.sim import scattering_factors, helper
 
 # load anom terms for Yb at given energy
-fp, fdp = scattering_factors.Yb_fp_fdp_at_eV(8944, 'henke')
+fp, fdp = scattering_factors.Yb_fp_fdp_at_eV(args.e, 'henke')
 
 # load the data dictionary, 3 complex miller arrays
-D = utils.open_flex("karl.pkl")
-
-sg96 = sgtbx.space_group(" P 4nw 2abw")
-
+D = utils.open_flex(args.i)
 
 Fprot = helper.generate_table(D["Aprotein"].data(), D["Aprotein"].indices() )
 Fheav = helper.generate_table(D["Aheavy"].data(), D["Aheavy"].indices() )
@@ -33,6 +35,12 @@ hkl = np.array(list(set(hkl)))
 B = matrix.sqr((79, 0, 0, 0, 79, 0, 0, 0, 38)).inverse()
 B = B.as_numpy_array()
 
+FT_map = {}
+FA_map = {}
+ALPHA_map = {}
+A_map = {}
+B_map = {}
+C_map = {}
 
 for i_h,H in enumerate(hkl):
     res = 1./np.linalg.norm(np.dot( B, H))
@@ -55,29 +63,42 @@ for i_h,H in enumerate(hkl):
     elif np.all(H > 0):
         hand = 1
         #alpha = np.angle(prot) - np.angle(heav)
-    elif np.any(H == 0):
-        continue
-    else:
-        print "what am I doing here? ", H  
-        continue 
+    #elif np.any(H == 0):
+    #    continue
+    #else:
+    #    print "what am I doing here? ", H
+    #    continue
 
     alpha = np.angle(prot) - np.angle(heav)
     Ipp = abs(prot)**2
     Ihh = abs(heav)**2
     Iph = abs(prot)*abs(heav)
+    
     #if hand==1:
-    karl = Ipp + a * Ihh + Iph * b * cos(alpha) + hand * c * Iph * sin(alpha)
+    
+    karl = Ipp + a * Ihh + Iph * b * cos(alpha) + c * Iph * sin(alpha)
+    
     #else:
     #karl = Ipp + a * Ihh + Iph * b * cos(alpha) - hand * c * Iph * sin(alpha)
-    karl2 = Ipp + a * Ihh + Iph * b * cos(alpha) - hand * c * Iph * sin(alpha)
+    #karl2 = Ipp + a * Ihh + Iph * b * cos(alpha) - hand * c * Iph * sin(alpha)
    
-    if hand==1: 
-        resid = np.abs(np.abs(tot) - np.sqrt(karl))
-    else:
-        resid = np.abs(np.abs(tot) - np.sqrt(karl2))
-    if resid > 1:
-        print "H (%d/%d): %d %d %d ; res=%.1f , Ftot=%.3f, Fkarl=%.3f, Fkarl2=%.3f" % \
-            (i_h+1, len(hkl), H[0], H[1], H[2], res, abs(tot), np.sqrt(karl), np.sqrt(karl2))
+    #if hand==1:
+    #    resid = np.abs(np.abs(tot) - np.sqrt(karl))
+    #else:
+    
+    resid = np.abs(np.abs(tot) - np.sqrt(karl))
+    if resid > 1:  # print high residuals for debugging
+        print "H (%d/%d): %d %d %d ; reso=%.1f , Ftot=%.3f, Fkarl=%.3f, residual=%.3f" % \
+            (i_h+1, len(hkl), H[0], H[1], H[2], res, abs(tot), np.sqrt(karl), resid)
+
+    H = tuple(H)
+    A_map[H] = a
+    B_map[H] = b
+    C_map[H] = c
+    FT_map[H] = prot
+    FA_map[H] = heav
+    ALPHA_map[H] = alpha
+
+np.savez(args.o, A=A_map, B=B_map, C=C_map, FT=FT_map, FA=FA_map, ALPHA=ALPHA_map)
 
 
-embed()
