@@ -1,16 +1,5 @@
-from argparse import ArgumentParser
-
-parser = ArgumentParser("eigen solvers")
-parser.add_argument("-i", type=str, help='input_file')
-parser.add_argument("-o", type=str, help='output mtz')
-parser.add_argument("-sim", action='store_true')
-parser.add_argument("-weights", action='store_true')
-parser.add_argument("-N", type=int, default=None, help="Nshots max")
-args = parser.parse_args()
-
 
 import numpy as np
-from cxid9114.solvers import solvers
 import cxid9114
 from scitbx.lstbx import normal_eqns_solving
 from scitbx.array_family import flex
@@ -41,18 +30,15 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
         self.karlize(objective_only, current_values = self.x)
 
 
-class eigen_solver(solvers.LBFGSsolver):
+class karl_solver:
 
-    def __init__(self, data, guess, truth=None, conj_grad=True, weights=None):
-        #solvers.LBFGSsolver.__init__(self, *args, **kwargs)  # NOTE: do it with lbfgs=False
-        # ^ brings in Yobs, LA, LB, PA, PB, Nhkl, Ns, Nmeas,   Aidx, Gidx
+    def __init__(self, data, truth=None, conj_grad=True, weights=None):
         self.data = data
-        self.guess = guess
         self.truth = truth
 
         self._prepare_constants()
-
         self._store_initial_guess()
+        self._define_useful_scalars()
 
         self.counter = 0
 
@@ -68,8 +54,7 @@ class eigen_solver(solvers.LBFGSsolver):
         # NOTE: I'm a cpp function defined in solvers_ext.cpp
         self.helper.set_karl_data(self.Yobs, self.Wobs,
             self.Aidx, self.Gidx,
-                self.PA, self.PB, self.LA, self.LB,
-            self.a_enA, self.a_enB, self.b_enA, self.b_enB, self.c_enA, self.c_enB,
+                self.PA, self.PB, self.LA, self.LB, self.EN,
                 self.Nhkl, self.Ns, )
 
         self.helper.restart()
@@ -90,22 +75,25 @@ class eigen_solver(solvers.LBFGSsolver):
         """
         LA,LB,PA,PB, a_lambda, b_lambda, c_lambda are all constants in this experiment
         """
+        self.LA = flex.double(np.ascontiguousarray(self.data["LA"]))
+        self.LB = flex.double(np.ascontiguousarray(self.data["LB"]))
+        self.PA = flex.double(np.ascontiguousarray(self.data["PA"]))
+        self.PB = flex.double(np.ascontiguousarray(self.data["PB"]))
+
         # TODO compute the a constants on the fly ?
-        self.LA = flex.double(np.ascontiguousarray(self.data["LA"]))
-        self.LB = flex.double(np.ascontiguousarray(self.data["LB"]))
-        self.LA = flex.double(np.ascontiguousarray(self.data["LA"]))
-        self.LB = flex.double(np.ascontiguousarray(self.data["LB"]))
+        self.EN = np.concatenate(
+            (self.data["a_enA"],
+            self.data["b_enA"],
+            self.data["c_enA"],
+            self.data["a_enB"],
+            self.data["b_enB"],
+            self.data["c_enB"]))
 
-        self.a_enA = flex.double(np.ascontiguousarray(self.data["a_enA"]))
-        self.a_enB = flex.double(np.ascontiguousarray(self.data["a_enB"]))
-
-        self.b_enA = flex.double(np.ascontiguousarray(self.data["b_enA"]))
-        self.b_enB = flex.double(np.ascontiguousarray(self.data["b_enB"]))
-
-        self.c_enA = flex.double(np.ascontiguousarray(self.data["c_enA"]))
-        self.c_enB = flex.double(np.ascontiguousarray(self.data["c_enB"]))
-
+        self.EN = flex.double(np.ascontiguousarray(self.EN))
         self.Yobs = flex.double(np.ascontiguousarray(self.data["Yobs"]))
+
+        self.Aidx = flex.size_t(np.ascontiguousarray(self.data["Aidx"]))
+        self.Gidx = flex.size_t(np.ascontiguousarray(self.data["Gidx"]))
 
     def _store_initial_guess(self):
         """
@@ -116,21 +104,21 @@ class eigen_solver(solvers.LBFGSsolver):
         1 of length Ns for the per-crystal scale factors
         """
         self.x_init = np.concatenate(
-            np.log(self.guess["Iprot_prm"]),
-            np.log(self.guess["Iheavy_prm"]),
-            self.guess["alpha_prm"],
-            self.guess["Gain_prm"])
+            (np.log(self.data["Iprot_prm"]),
+             np.log(self.data["Iheavy_prm"]),
+             self.data["alpha_prm"],
+             self.data["Gain_prm"]))
 
         # convert to flex
         self.x_init = flex.double(np.ascontiguousarray(self.x_init))
 
-    def useful_scalars(self):
+    def _define_useful_scalars(self):
         """
         stores numbers of things
         """
         self.Nmeas = len(self.Yobs)
-        self.Nhkl = self.guess["Iprot_prm"].shape[0]
-        self.Ns = self.guess["Gain_prm"].shape[0]
+        self.Nhkl = self.data["Iprot_prm"].shape[0]
+        self.Ns = self.data["Gain_prm"].shape[0]
 
 
 
