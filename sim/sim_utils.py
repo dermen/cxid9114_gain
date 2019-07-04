@@ -552,7 +552,6 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
                    add_water=False, add_noise=False, boost=1, device_Id=0,
                    beamsize_mm=None, exposure_s=None, accumulate=False, only_water=False, add_spots=True):
 
-    print ("Rank %d: HERE!" % device_Id)
     Npan = len(detector)
     Nchan = len(energies)
 
@@ -593,7 +592,6 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
         else:
             PattF.adjust_mosaicity(1,0)
        
-        print ii, mos_dom, mos_spread, Ncells_abc, oversample 
         PattF.adjust_dispersion(disp_pct)
         PattF.adjust_divergence(div_tup)
         
@@ -629,12 +627,12 @@ def sim_twocolors2(crystal, detector, beam, fcalcs, energies, fluxes, pids=None,
             else:
                 panel_imgs[i_en].append(color_img)
 
-        
+        PattF.SIM2.free_all()
     if gimmie_Patt:
         return panel_imgs, PattF
     else:
-        PattF.SIM2.free_all()
-        del PattF
+        #PattF.SIM2.free_all()
+        #del PattF
         return panel_imgs
 
 
