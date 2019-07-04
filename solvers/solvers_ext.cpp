@@ -264,31 +264,174 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
     // SET A SOLVE METHOD TO OVERRIDE THE CURRENT ONE
 
     void set_cpp_data(vecd y_obs_, vecd w_obs_,
-                    //vecd Gcurr_,
-                    //vecd IAcurr_,
-                    //vecd IBcurr_,
                     veci Aidx_,
                     veci Gidx_,
                     vecd PA_,
                     vecd PB_,
                     vecd LA_,
-                    vecd LB_, std::size_t Nhkl_,
+                    vecd LB_,
+                    std::size_t Nhkl_,
                     std::size_t Ns_){
         y_obs=y_obs_;
         w_obs=w_obs_;
         Aidx=Aidx_;Gidx=Gidx_;
-        //IAcurr = IAcurr_;
-        //IBcurr = IBcurr_;
-        //Gcurr = Gcurr_;
         LA=LA_;LB=LB_;PA=PA_;PB=PB_;
         Nhkl=Nhkl_;Ns=Ns_;
-
-        // initialize the jacobian sparse arrays
-        //for (int i=0; i < 3*y_obs.size(); i++){ // 3 parameters sampled  per measurement in this case..
-        //  jacobian_one_row_indices.push_back(0);
-        //  jacobian_one_row_data.push_back(0);
-        //  }
         }
+
+
+    void set_karl_data(vecd y_obs_, vecd w_obs_,
+                veci Aidx_,
+                veci Gidx_,
+                vecd PA_,
+                vecd PB_,
+                vecd LA_,
+                vecd LB_,
+                vecd EN_,
+                //vecd a_enA_,
+                //vecd a_enB_,
+                //vecd b_enA_,
+                //vecd b_enB_,
+                //vecd c_enA_,
+                //vecd c_enB_,
+                std::size_t Nhkl_,
+                std::size_t Ns_){
+        y_obs=y_obs_;
+        w_obs=w_obs_;
+        Aidx=Aidx_;Gidx=Gidx_;
+        LA=LA_;LB=LB_;PA=PA_;PB=PB_;
+        EN=EN_;
+        //a_enA=a_enA_;
+        //a_enB=a_enB_;
+
+        //b_enA=b_enA_;
+        //b_enB=b_enB_;
+
+        //c_enA=c_enA_;
+        //c_enB=c_enB_;
+        Nhkl=Nhkl_;Ns=Ns_;
+        }
+
+
+
+    vecd fvec_karl(vecd current_values) {
+          vecd y_diff = vecd(y_obs.size());
+          for (int i = 0; i < y_obs.size(); ++i){
+
+            std::size_t i_hkl = Aidx[i];
+            std::size_t i_s = Gidx[i];
+
+            double Iprot = std::exp(current_values[i_hkl]);
+            double Iheav = std::exp(current_values[Nhkl + i_hkl]);
+            double alpha = current_values[2*Nhkl + i_hkl];
+            double G = current_values[3*Nhkl + i_s];
+
+            double COS = std::cos(alpha);
+            double SIN = std::cos(alpha);
+
+            double Ipp = Iprot*Iprot;
+            double Ihh = Iheav*Iheav;
+            double IphCOS = Iprot*Iheav*COS;
+            double IphSIN = Iprot*Iheav*SIN;
+
+            double a_enA = EN[i_hkl];
+            double b_enA = EN[i_hkl + Nhkl];
+            double c_enA = EN[i_hkl + 2*Nhkl];
+            double a_enB = EN[i_hkl + 3*Nhkl];
+            double b_enB = EN[i_hkl + 4*Nhkl];
+            double c_enB = EN[i_hkl + 5*Nhkl];
+
+            double karl_A = Ipp + Ihh*a_enA + IphCOS*b_enA + IphSIN*c_enA;
+            double karl_B = Ipp + Ihh*a_enB + IphCOS*b_enB + IphSIN*c_enB;
+
+            double y_calc = G * (karl_A * LA[i]*PA[i]
+                                        + karl_B*LB[i]*PB[i]);
+            y_diff[i] = y_obs[i] - y_calc;
+          }
+          return y_diff;
+        }
+
+    void karlize(bool objective_only,
+                 scitbx::af::shared<double> current_values) {
+
+        vecd residuals = fvec_karl(current_values);
+        if (objective_only){
+          add_residuals(residuals.const_ref(), w_obs.const_ref());
+          return;
+        }
+
+        veci jacobian_one_row_indices(4);
+        vecd jacobian_one_row_data(4);
+
+        size_t* jacobian_one_row_indices_pt = &jacobian_one_row_indices[0];
+        double* jacobian_one_row_data_pt = &jacobian_one_row_data[0];
+
+        // add one of the normal equations per each observation
+        for (int ix = 0; ix < y_obs.size(); ++ix) {
+
+          std::size_t i_hkl = Aidx[ix];
+          std::size_t i_s = Gidx[ix];
+
+          double Iprot = std::exp(current_values[i_hkl]);
+          double Iheav = std::exp(current_values[Nhkl + i_hkl]);
+          double alpha = current_values[2*Nhkl + i_hkl];
+          double Gval = current_values[3*Nhkl + i_s];
+
+            double Ipp = Iprot*Iprot;
+            double Ihh = Iheav*Iheav;
+            double COS = std::cos(alpha);
+            double SIN = std::cos(alpha);
+            double IphCOS = Iprot*Iheav*COS;
+            double IphSIN = Iprot*Iheav*SIN;
+
+            double a_enA = EN[i_hkl];
+            double b_enA = EN[i_hkl + Nhkl];
+            double c_enA = EN[i_hkl + 2*Nhkl];
+            double a_enB = EN[i_hkl + 3*Nhkl];
+            double b_enB = EN[i_hkl + 4*Nhkl];
+            double c_enB = EN[i_hkl + 5*Nhkl];
+
+          double Aterm = LA[ix]*PA[ix];
+          double Bterm = LB[ix]*PB[ix];
+
+          // first derivitive of "yobs - ycalc" w.r.t. Iprot
+          double dIprot = Gval*Aterm*(2*Ipp + IphCOS*b_enA + IphSIN*c_enA)
+                + Gval*Bterm*(2*Ipp + IphCOS*b_enB + IphSIN*c_enB)   ;
+          jacobian_one_row_indices_pt[0]= i_hkl;
+          jacobian_one_row_data_pt[0] = dIprot;
+
+          // derivitive w.r.t. Iheav
+          double dIheav = Gval*Aterm*(2*Ihh*a_enA + IphCOS*b_enA + IphSIN*c_enA)
+                + Gval*Bterm*(2*Ihh*a_enB + IphCOS*b_enB + IphSIN*c_enB);
+          jacobian_one_row_indices_pt[1]= Nhkl + i_hkl;
+          jacobian_one_row_data_pt[1] = dIheav;
+
+          // derivitive w.r.t. alpha
+          double dalpha = Gval*Aterm*(-IphSIN*b_enA + IphCOS*c_enA)
+            +Gval*Bterm*(-IphSIN*b_enB + IphCOS*c_enB);
+          jacobian_one_row_indices_pt[2]= 2*Nhkl + i_hkl;
+          jacobian_one_row_data_pt[2] = dalpha;
+
+          // derivitive w.r.t. G
+          double dG = Aterm*(Ipp + Ihh*a_enA + IphCOS*b_enA + IphSIN*c_enA)
+            +Bterm*(Ipp + Ihh*a_enB + IphCOS*b_enB + IphSIN*c_enB);
+          jacobian_one_row_indices_pt[3]= 3*Nhkl + i_s;
+          jacobian_one_row_data_pt[3] = dG;
+
+          //add_equation(residuals[ix], jacobian_one_row.const_ref(), weights[ix]);
+          add_residual(-residuals[ix], 1.0);
+          add_equation_eigen(residuals[ix], jacobian_one_row_indices.const_ref(), jacobian_one_row_data.const_ref(), 1.);
+        }
+    }
+
+    double functional_karl(vecd current_values) {
+      double result = 0;
+      vecd fvec = fvec_karl(current_values);
+      for (int i = 0; i < fvec.size(); ++i) {
+        result += fvec[i]*fvec[i]*w_obs[i];
+      }
+      return result;
+    }
 
     vecd fvec_callable(vecd current_values) {
           vecd y_diff = vecd(y_obs.size());
@@ -306,7 +449,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
             y_diff[i] = y_obs[i] - y_calc;
           }
           return y_diff;
-        }
+    }
 
     void access_cpp_build_up_directly_eigen_eqn(
                             bool objective_only,
@@ -363,7 +506,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           add_residual(-residuals[ix], 1.0);
           add_equation_eigen(residuals[ix], jacobian_one_row_indices.const_ref(), jacobian_one_row_data.const_ref(), 1.);
           }
-        }
+    }
 
     double functional(vecd current_values) {
       double result = 0;
@@ -375,13 +518,18 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
     }
 
     vecd y_obs,w_obs,PA,PB,LA,LB;
+    //vecd a_enA, a_enB;
+    //vecd b_enA, b_enB;
+    //vecd c_enA, c_enB
+    vecd EN;
     veci Aidx,Gidx;
-    std::size_t Nhkl, n, Ns;
+    std::size_t Nhkl, n, Ns, Ne;
 
     //veci jacobian_one_row_indices(3);
     //vecd jacobian_one_row_data(3);
   };
 // END Sparse lev-mar tools
+
 
 
 namespace boost_python {
@@ -441,10 +589,12 @@ namespace boost_python {
     class_<lsjb,bases<nllsew> >( "log_sparse_jac_base", no_init)
 
       .def( init<int>(arg("n_parameters")))
+
       .def(
         "access_cpp_build_up_directly_eigen_eqn",
         &lsjb::access_cpp_build_up_directly_eigen_eqn,
         (arg("objective_only"),arg("current_values")))
+
       .def(
         "fvec_callable",
         &lsjb::fvec_callable,
@@ -460,10 +610,83 @@ namespace boost_python {
       .def(
         "set_cpp_data",
         &lsjb::set_cpp_data,
-        (arg("y_obs_"), arg("w_obs"), arg("Aidx_"), arg("Gidx_"), arg("PA_"),
+        (arg("y_obs_"), arg("w_obs_"), arg("Aidx_"), arg("Gidx_"), arg("PA_"),
          arg("PB_"), arg("LA_"), arg("LB_"), arg("Nhkl_"),
          arg("Ns_")) )
+
+      .def(
+        "functional_karl",
+        &lsjb::functional_karl,
+        (arg("current_values")) )
+
+      .def(
+        "fvec_karl",
+        &lsjb::fvec_karl,
+        (arg("current_values")) )
+
+
+      .def(
+        "karlize",
+        &lsjb::karlize,
+        (arg("objective_only"),arg("current_values")))
+
+      .def(
+        "set_karl_data",
+        &lsjb::set_karl_data,
+        (arg("y_obs_"),
+         arg("w_obs_"),
+         arg("Aidx_"),
+         arg("Gidx_"),
+         arg("PA_"),
+         arg("PB_"),
+         arg("LA_"),
+         arg("LB_"),
+         arg("EN_"),
+         arg("Nhkl_"),
+         arg("Ns_")) )
       ;
+
+
+
+      /*
+   class_<sparse_karl,bases<nllsew> >( "sparse_karl", no_init)
+
+      .def( init<int>(arg("n_parameters")))
+
+
+      .def(
+        "set_karl_data",
+        &sparse_karl::set_cpp_data,
+        (arg("y_obs_"), arg("w_obs_"), arg("Aidx_"), arg("Gidx_"), arg("PA_"),
+         arg("PB_"), arg("LA_"), arg("LB_"),
+           arg("a_enA_"),
+            arg("a_enB_"),
+            arg("b_enA_"),
+            arg("b_enB_"),
+            arg("c_enA_"),
+            arg("c_enB_"),
+            arg("Nhkl_"),
+            arg("Ns_")) )
+
+      .def(
+        "functional_karl",
+        &lsjb::functional_karl,
+        (arg("current_values")) )
+
+      .def(
+        "fvec_karl",
+        &lsjb::fvec_karl,
+        (arg("current_values")) )
+
+      .def(
+        "karlize",
+        &lsjb::karlize,
+        (arg("objective_only"),arg("current_values")))
+
+      ;
+      */
+
+
   }
 
 }}}
