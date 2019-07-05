@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 parser = ArgumentParser("test")
 parser.add_argument("-i", help='input pickle', type=str, required=True)
 parser.add_argument("-o", help='output npz', type=str, required=True)
+parser.add_argument("-thresh", type=float, default=35.5)
 parser.add_argument("-dmin", help="resolution min", type=float, default=None)
 parser.add_argument("-hanom", help='hAnom are defined in pickle, otherwise uses h2', action='store_true')
 parser.add_argument("-min-pix", dest='deltapix_min', type=float,
@@ -13,6 +14,7 @@ parser.add_argument("-j", help='number of jobs', default=4, type=int)
 parser.add_argument('-rotmin', default=None, type=float)
 parser.add_argument('--make-shot-index', action='store_true', dest='shot_index')
 parser.add_argument('--filt', action='store_true', dest='filt')
+parser.add_argument('--gauss', action='store_true')
 args = parser.parse_args()
 
 import pandas
@@ -104,7 +106,7 @@ split_h = np.array_split( np.vstack(set(hkl)), n_jobs)
 
 
 def main(jid):
-    print_stride=20
+    print_stride=40
     I = []
     IA = []
     IB = []
@@ -117,20 +119,19 @@ def main(jid):
         h = tuple(h)
         dhkl = gb.get_group(h)
 
+        I_guess, dhkl_filt, pFit, cov = filter_outliers(
+            dhkl, fit_gauss=args.gauss,
+            nsig=3, thresh=args.thresh,
+            use_median=True)
+        dhkl_filt["multiplicity"] = len(dhkl_filt)
+
+        pFits.append(pFit)
+        covs.append(cov)
+
         if args.filt:
-            I_guess, dhkl_filt, pFit, cov = filter_outliers(
-                    dhkl, fit_gauss=True,
-                    nsig=3, thresh=4.0,
-                    use_median=False)
-            dhkl_filt["multiplicity"] = len(dhkl_filt)
-            new_dfs.append( dhkl_filt)
-            pFits.append(pFit)
-            covs.append(cov)
+            new_dfs.append(dhkl_filt)
         else:
-            I_guess=0
             new_dfs.append(dhkl)
-            pFits.append(None)
-            covs.append(None)
 
         I.append(I_guess)
         IA_truth = abs(SA_map[h])**2

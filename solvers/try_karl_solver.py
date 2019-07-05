@@ -14,6 +14,6 @@ import numpy as np
 from IPython import embed
 from cxid9114.solvers.karl_solver import karl_solver
 
-karl_solver(np.load(args.i))
+KS = karl_solver(np.load(args.i))
 embed()
 

@@ -312,8 +312,6 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
         Nhkl=Nhkl_;Ns=Ns_;
         }
 
-
-
     vecd fvec_karl(vecd current_values) {
           vecd y_diff = vecd(y_obs.size());
           for (int i = 0; i < y_obs.size(); ++i){
@@ -396,7 +394,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
 
           // first derivitive of "yobs - ycalc" w.r.t. Iprot
           double dIprot = Gval*Aterm*(2*Ipp + IphCOS*b_enA + IphSIN*c_enA)
-                + Gval*Bterm*(2*Ipp + IphCOS*b_enB + IphSIN*c_enB)   ;
+                + Gval*Bterm*(2*Ipp + IphCOS*b_enB + IphSIN*c_enB);
           jacobian_one_row_indices_pt[0]= i_hkl;
           jacobian_one_row_data_pt[0] = dIprot;
 

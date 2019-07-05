@@ -10,6 +10,7 @@ parser.add_argument("-min-pix", dest='deltapix_min', type=float,
                     default=None)
 parser.add_argument('-rotmin', default=None, type=float)
 parser.add_argument('--make-shot-index', action='store_true', dest='shot_index')
+parser.add_argument('-p', type=float, default=None, help='perturbation factor')
 args = parser.parse_args()
 
 
@@ -99,10 +100,16 @@ Ns = df.Gidx.unique().shape[0]
 print ("3x %d hlk and 1 x %d shots = %d UNKNOWNS" % (Nh, Ns, 3*Nh+Ns))
 print "%d MEASUREMENTS"%len(df)
 
-Iprot_prm = [abs(FT[h])**2 for h in U_hkl]
-Iheav_prm = [abs(FA[h])**2 for h in U_hkl]
+Fprot_prm = [abs(FT[h]) for h in U_hkl]
+Fheav_prm = [abs(FA[h]) for h in U_hkl]
 alpha_prm = [ALPHA[h] for h in U_hkl]
 Gprm = np.ones(Ns)
+
+if args.p is not None:
+    alpha_prm = np.random.permutation(alpha_prm)
+    Fprot_prm = np.exp(np.random.uniform(np.log(Fprot_prm)-args.p, np.log(Fprot_prm)+args.p))
+    Fheav_prm = np.exp(np.random.uniform(np.log(Fheav_prm)-args.p, np.log(Fheav_prm)+args.p))
+    Gprm = np.random.uniform(0.5, 1.5, Ns)
 
 np.savez(args.o,
         a_enA=a,
@@ -111,8 +118,8 @@ np.savez(args.o,
         a_enB=a2,
         b_enB=b2,
         c_enB=c2,
-        Iprot_prm=Iprot_prm,
-        Iheavy_prm=Iheav_prm,
+        Fprot_prm=Fprot_prm,
+        Fheavy_prm=Fheav_prm,
         alpha_prm=alpha_prm,
         Gain_prm=Gprm,
         Yobs=df.D.values,

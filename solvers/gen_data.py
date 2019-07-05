@@ -51,13 +51,14 @@ def gen_data(input_file, noise_lvl=0,load_hkl=False, Nshot_max = None):
         gain_remap = {g: i_g for i_g,g in enumerate(set(gdata))}
         gdata = np.array([gain_remap[g] for g in gdata])
 
-    Nmeas = len( ydata)
+    Nmeas = len(ydata)
     Namp = np.unique(adata).shape[0]
     Ngain = np.unique(gdata).shape[0]
     print "N-unknowns: 2xNhkl + Ngain = %d unknowns," % (2*Namp + Ngain)
     print "N-measurements: %d" % Nmeas
+    print "Ngain", Ngain
 
-    ydata = np.random.normal( ydata, noise_lvl)
+    ydata = np.random.normal(ydata, noise_lvl)
 
     if load_hkl:
         data_hkl = np.load("data_hkl")
@@ -69,7 +70,7 @@ def gen_data(input_file, noise_lvl=0,load_hkl=False, Nshot_max = None):
 
     return {"Yobs": ydata, "LA":LAdata, "LB":LBdata, "IA": FAdat**2,
             "IB": FBdat**2, "G": gains, "Aidx": adata, "Gidx": gdata,
-            "PA": PAdata, "PB": PBdata, "Iprm": data["Iprm"], "weights": data["Weights"]}
+            "PA": PAdata, "PB": PBdata, "Iprm": data["Iprm"], "weights": np.nan_to_num(data["Weights"])}
 
 
 def guess_data(data, perturbate=True, use_Iguess=False, perturbate_factor=.1):

@@ -23,7 +23,7 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
         if not objective_only:
             functional = self.functional_karl(self.x)   # NOTE: Im a cpp function in solvers_ext.cpp
             print("\n\t<><><><><><>")
-            print("Functional value: %.10e" % functional)
+            print("Count=%d Functional value: %.10e" % (self.counter, functional))
             print("\t<><><><><><>\n")
             self.stored_functional.append(functional)
 
@@ -51,18 +51,22 @@ class karl_solver:
         self.helper = eigen_helper(initial_estimates=self.x_init) #, Nhkl=self.Nhkl)
         self.helper.eigen_wrapper.conj_grad = conj_grad
 
+
         # NOTE: I'm a cpp function defined in solvers_ext.cpp
         self.helper.set_karl_data(self.Yobs, self.Wobs,
             self.Aidx, self.Gidx,
                 self.PA, self.PB, self.LA, self.LB, self.EN,
                 self.Nhkl, self.Ns, )
 
+        print self.calc_func()[1]
+        print self.helper.functional_karl(self.helper.x)
+        exit()
         self.helper.restart()
 
         try:
             _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
                    non_linear_ls=self.helper,
-                   n_max_iterations=200,
+                   n_max_iterations=2000,
                    track_all=True,
                    step_threshold=0.0001)
         except KeyboardInterrupt:
@@ -104,8 +108,8 @@ class karl_solver:
         1 of length Ns for the per-crystal scale factors
         """
         self.x_init = np.concatenate(
-            (np.log(self.data["Iprot_prm"]),
-             np.log(self.data["Iheavy_prm"]),
+            (np.log(self.data["Fprot_prm"]),
+             np.log(self.data["Fheavy_prm"]),
              self.data["alpha_prm"],
              self.data["Gain_prm"]))
 
@@ -117,8 +121,36 @@ class karl_solver:
         stores numbers of things
         """
         self.Nmeas = len(self.Yobs)
-        self.Nhkl = self.data["Iprot_prm"].shape[0]
+        self.Nhkl = self.data["Fprot_prm"].shape[0]
         self.Ns = self.data["Gain_prm"].shape[0]
 
+    def calc_func(self, x=None):
+        if x is None:
+            x = self.helper.x.as_numpy_array()
+        Nh = self.Nhkl
+        Aidx = self.Aidx.as_numpy_array()
+        Gidx = self.Gidx.as_numpy_array()
+        EN = self.EN.as_numpy_array()
+        PA = self.PA.as_numpy_array()
+        PB = self.PB.as_numpy_array()
+        LB = self.LB.as_numpy_array()
+        LA = self.LA.as_numpy_array()
+        a_enA = EN[:Nh][Aidx]
+        b_enA = EN[Nh:2*Nh][Aidx]
+        c_enA = EN[2*Nh:3*Nh][Aidx]
+        a_enB = EN[3*Nh:4*Nh][Aidx]
+        b_enB = EN[4*Nh:5*Nh][Aidx]
+        c_enB = EN[5*Nh:][Aidx]
 
+        prot = np.exp(x[:Nh])[Aidx]
+        heav = np.exp(x[Nh:2*Nh])[Aidx]
+        alpha = x[2*Nh:3*Nh][Aidx]
+        G = x[3*Nh:][Gidx]
 
+        Aterm = PA*LA*(prot**2 + heav**2 * a_enA + prot*heav*b_enA*np.cos(alpha) +
+                       prot*heav*c_enA*np.sin(alpha))
+        Bterm = PB*LB*(prot**2 + heav**2 * a_enB + prot*heav*b_enB*np.cos(alpha) +
+                       prot*heav*c_enB*np.sin(alpha))
+
+        ymodel = G*(Aterm+Bterm)
+        return ymodel, np.sum((self.Yobs.as_numpy_array() - ymodel)**2)
