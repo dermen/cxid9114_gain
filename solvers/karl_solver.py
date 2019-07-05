@@ -9,11 +9,12 @@ from scitbx.examples.bevington.silver import levenberg_common
 
 class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non_linear_ls_mixin):
 
-    def __init__(self, initial_estimates):
+    def __init__(self, initial_estimates, Nh):
 
         super(eigen_helper, self).__init__(n_parameters=len(initial_estimates))
         self.initialize(initial_estimates)
         self.stored_functional = []
+        self.Nh = Nh
 
     def build_up(self, objective_only=False):
         if not objective_only:
@@ -22,9 +23,12 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
         self.reset()
         if not objective_only:
             functional = self.functional_karl(self.x)   # NOTE: Im a cpp function in solvers_ext.cpp
-            print("\n\t<><><><><><>")
-            print("Count=%d Functional value: %.10e" % (self.counter, functional))
-            print("\t<><><><><><>\n")
+            G = self.x[3*self.Nh:].as_numpy_array()
+            Gm =G.mean()
+            Gs = G.std()
+            print("\n<><><><><><>")
+            print("Count=%d Functional value: %.10e, Gain=%.3f (%.3f)" % (self.counter, functional, Gm, Gs))
+            print("<><><><><><>\n")
             self.stored_functional.append(functional)
 
         self.karlize(objective_only, current_values = self.x)
@@ -48,7 +52,7 @@ class karl_solver:
         else:
             self.Wobs = weights
 
-        self.helper = eigen_helper(initial_estimates=self.x_init) #, Nhkl=self.Nhkl)
+        self.helper = eigen_helper(initial_estimates=self.x_init, Nh=self.Nhkl)
         self.helper.eigen_wrapper.conj_grad = conj_grad
 
 
@@ -58,15 +62,15 @@ class karl_solver:
                 self.PA, self.PB, self.LA, self.LB, self.EN,
                 self.Nhkl, self.Ns, )
 
-        print self.calc_func()[1]
-        print self.helper.functional_karl(self.helper.x)
-        exit()
+        #print self.calc_func()[1]
+        #print self.helper.functional_karl(self.helper.x)
+
         self.helper.restart()
 
         try:
             _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
                    non_linear_ls=self.helper,
-                   n_max_iterations=2000,
+                   n_max_iterations=200,
                    track_all=True,
                    step_threshold=0.0001)
         except KeyboardInterrupt:
@@ -142,15 +146,15 @@ class karl_solver:
         b_enB = EN[4*Nh:5*Nh][Aidx]
         c_enB = EN[5*Nh:][Aidx]
 
-        prot = np.exp(x[:Nh])[Aidx]
-        heav = np.exp(x[Nh:2*Nh])[Aidx]
-        alpha = x[2*Nh:3*Nh][Aidx]
-        G = x[3*Nh:][Gidx]
+        self.prot = np.exp(x[:Nh])[Aidx]
+        self.heav = np.exp(x[Nh:2*Nh])[Aidx]
+        self.alpha = x[2*Nh:3*Nh][Aidx]
+        self.G = x[3*Nh:][Gidx]
 
-        Aterm = PA*LA*(prot**2 + heav**2 * a_enA + prot*heav*b_enA*np.cos(alpha) +
-                       prot*heav*c_enA*np.sin(alpha))
-        Bterm = PB*LB*(prot**2 + heav**2 * a_enB + prot*heav*b_enB*np.cos(alpha) +
-                       prot*heav*c_enB*np.sin(alpha))
+        Aterm = PA*LA*(self.prot**2 + self.heav**2 * a_enA + self.prot*self.heav*b_enA*np.cos(self.alpha) +
+                       self.prot*self.heav*c_enA*np.sin(self.alpha))
+        Bterm = PB*LB*(self.prot**2 + self.heav**2 * a_enB + self.prot*self.heav*b_enB*np.cos(self.alpha) +
+                       self.prot*self.heav*c_enB*np.sin(self.alpha))
 
-        ymodel = G*(Aterm+Bterm)
+        ymodel = self.G*(Aterm+Bterm)
         return ymodel, np.sum((self.Yobs.as_numpy_array() - ymodel)**2)
