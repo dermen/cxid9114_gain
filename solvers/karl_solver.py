@@ -1,10 +1,16 @@
 
 import numpy as np
-import cxid9114
+from IPython import embed
+
 from scitbx.lstbx import normal_eqns_solving
 from scitbx.array_family import flex
 from scitbx.lstbx import normal_eqns
 from scitbx.examples.bevington.silver import levenberg_common
+from cctbx import sgtbx, crystal, miller
+from cctbx.array_family import flex as cctbx_flex
+from cxid9114.parameters import ENERGY_CONV
+
+import cxid9114
 
 
 class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non_linear_ls_mixin):
@@ -43,7 +49,6 @@ class karl_solver:
         self._prepare_constants()
         self._store_initial_guess()
         self._define_useful_scalars()
-
         self.counter = 0
 
         # set dummie weights for now
@@ -55,18 +60,18 @@ class karl_solver:
         self.helper = eigen_helper(initial_estimates=self.x_init, Nh=self.Nhkl)
         self.helper.eigen_wrapper.conj_grad = conj_grad
 
-
         # NOTE: I'm a cpp function defined in solvers_ext.cpp
         self.helper.set_karl_data(self.Yobs, self.Wobs,
             self.Aidx, self.Gidx,
                 self.PA, self.PB, self.LA, self.LB, self.EN,
                 self.Nhkl, self.Ns, )
 
-        #print self.calc_func()[1]
-        #print self.helper.functional_karl(self.helper.x)
+        print self.calc_func()[1]
+        print self.helper.functional_karl(self.helper.x)
+        self._solve()
 
+    def _solve(self):
         self.helper.restart()
-
         try:
             _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
                    non_linear_ls=self.helper,
@@ -113,7 +118,7 @@ class karl_solver:
         """
         self.x_init = np.concatenate(
             (np.log(self.data["Fprot_prm"]),
-             np.log(self.data["Fheavy_prm"]),
+             self.data["Fheavy_prm"],
              self.data["alpha_prm"],
              self.data["Gain_prm"]))
 
@@ -147,7 +152,7 @@ class karl_solver:
         c_enB = EN[5*Nh:][Aidx]
 
         self.prot = np.exp(x[:Nh])[Aidx]
-        self.heav = np.exp(x[Nh:2*Nh])[Aidx]
+        self.heav = x[Nh:2*Nh][Aidx]
         self.alpha = x[2*Nh:3*Nh][Aidx]
         self.G = x[3*Nh:][Gidx]
 
@@ -158,3 +163,57 @@ class karl_solver:
 
         ymodel = self.G*(Aterm+Bterm)
         return ymodel, np.sum((self.Yobs.as_numpy_array() - ymodel)**2)
+
+
+    def to_mtzA(self, hkl_map, mtz_name, x=None, verbose=False, stride=50):
+        """
+        Takes the refined Fheavy and Fprot and creates an MTZ file
+        for the A-channel (8944 eV) Structure factors
+
+        :param hkl_map:  dictionary to lookup HKL from parameter index
+        :param mtz_name:
+        :param x: input array of parameters
+        :return:
+        """
+        if x is None:
+            x = self.helper.x.as_numpy_array()
+
+        Nh = self.Nhkl
+        assert (Nh == len(hkl_map))
+        logFprot = x[:Nh]
+        Fheavy = x[Nh:2*Nh]
+        alpha = x[2*Nh: 3*Nh]
+
+        hkl_map2 = {v: k for k, v in hkl_map.iteritems()}
+        hout, Iout = [], []
+        for i in range(Nh):
+            if verbose:
+                if i % stride==0:
+                    print ("Reflection %d / %d" % (i+1, Nh))
+            a = self.data["a_enA"][i]
+            b = self.data["b_enA"][i]
+            c = self.data["c_enA"][i]
+            h = hkl_map2[i]
+            Fp = np.exp(logFprot[i])
+            Fa = Fheavy[i]
+            COS = np.cos(alpha[i])
+            SIN = np.sin(alpha[i])
+            IA = Fp**2 + Fa**2 * a + Fa*Fp* (b*COS + c*SIN)
+
+            hout.append(h)
+            Iout.append(IA)
+
+        sg = sgtbx.space_group(" P 4nw 2abw")
+        Symm = crystal.symmetry(unit_cell=(79, 79, 38, 90, 90, 90), space_group=sg)
+        hout = tuple(hout)
+        mil_idx = cctbx_flex.miller_index(hout)
+        mil_set = miller.set(crystal_symmetry=Symm, indices=mil_idx, anomalous_flag=True)
+        Iout_flex = flex.double(np.ascontiguousarray(Iout))
+        mil_ar = miller.array(mil_set, data=Iout_flex).set_observation_type_xray_intensity()
+
+        waveA = ENERGY_CONV / 8944.
+        out = mil_ar.as_mtz_dataset(column_root_label="Iobs", title="B", wavelength=waveA)
+        out.add_miller_array(miller_array=mil_ar.average_bijvoet_mates(), column_root_label="IMEAN")
+        obj = out.mtz_object()
+        obj.write(mtz_name)
+

@@ -1,7 +1,13 @@
 #!/usr/bin/env libtbx.python
 
+"""
+Separates structure factors
+for protein sans heavy atom and
+heavy atom, and decouples wavelength contribu
+"""
+
 from argparse import ArgumentParser
-parser = ArgumentParser("scatt heavy")
+parser = ArgumentParser("scatt heavy TT")
 parser.add_argument("-e", help="energy in eV", type=float)
 parser.add_argument("-o", help='output name', type=str)
 parser.add_argument('-p', help='pdb input file', type=str)
@@ -24,7 +30,7 @@ yb_pos = [i for i, s in enumerate(sym) if s == 'Yb']
 #print yb_pos
 # Lookup the anomolous contributions TODO: consider doing this for all atoms and checking the difference
 
-print "Looking up anomalous contributions for all atoms!"
+print "Looking up anomalous contributions for all atoms except the Yb!"
 for i, s in enumerate(sc):
     if i in yb_pos:
         continue
@@ -41,13 +47,13 @@ for i, s in enumerate(sc):
 #sc[yb_pos[1]].fp = fp
 #sc[yb_pos[1]].fdp = fdp
 
-#xr2_sel = flex.bool(len(sc), True)
-#for pos in yb_pos:
-#    xr2_sel[pos] = False
-#xr2 = xr.select(xr2_sel)
-#sc2 = xr2.scatterers()
+xr2_sel = flex.bool(len(sc), True)
+for pos in yb_pos:
+    xr2_sel[pos] = False
+xr2 = xr.select(xr2_sel)
+sc2 = xr2.scatterers()
 print "Computing F protein"
-Fp = xr.structure_factors(d_min=d_min,
+Fp_sansHeavy = xr2.structure_factors(d_min=d_min,
                            algorithm='direct',
                            anomalous_flag=True).f_calc()
 
@@ -61,7 +67,7 @@ Fa = xr3.structure_factors(d_min=d_min,
                            algorithm='direct',
                            anomalous_flag=True).f_calc()
 
-Ap = Fp.data().as_numpy_array()
+Ap = Fp_sansHeavy.data().as_numpy_array()
 Aa = Fa.data().as_numpy_array()
 
 print "Computing F total including all anom contr"
@@ -93,6 +99,5 @@ Atot = Ftot.data().as_numpy_array()
 #print "Ftotal and Fprot + Fheavy should be equalish!"
 #assert (np.allclose(Atot, Aa+Ap))
 
-out = {"Aprotein": Fp, "Aheavy": Fa,"Atotal": Ftot }
+out = {"Aprotein": Fp_sansHeavy, "Aheavy": Fa, "Atotal": Ftot}
 utils.save_flex(out, args.o)
-

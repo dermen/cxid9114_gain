@@ -320,7 +320,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
             std::size_t i_s = Gidx[i];
 
             double Iprot = std::exp(current_values[i_hkl]);
-            double Iheav = std::exp(current_values[Nhkl + i_hkl]);
+            double Iheav = current_values[Nhkl + i_hkl];
             double alpha = current_values[2*Nhkl + i_hkl];
             double G = current_values[3*Nhkl + i_s];
 
@@ -331,9 +331,6 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
             double Ihh = Iheav*Iheav;
             double IphCOS = Iprot*Iheav*COS;
             double IphSIN = Iprot*Iheav*SIN;
-
-            //if (i==42)
-            //    std::cout << Ipp << " " << Ihh << " " << IphCOS << " " << IphSIN << "\n";
 
             double a_enA = EN[i_hkl];
             double b_enA = EN[i_hkl + Nhkl];
@@ -374,7 +371,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           std::size_t i_s = Gidx[ix];
 
           double Iprot = std::exp(current_values[i_hkl]);
-          double Iheav = std::exp(current_values[Nhkl + i_hkl]);
+          double Iheav = current_values[Nhkl + i_hkl];
           double alpha = current_values[2*Nhkl + i_hkl];
           double Gval = current_values[3*Nhkl + i_s];
 
@@ -402,8 +399,8 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           jacobian_one_row_data_pt[0] = dIprot;
 
           // derivitive w.r.t. Iheav
-          double dIheav = Gval*Aterm*(2*Ihh*a_enA + IphCOS*b_enA + IphSIN*c_enA)
-                + Gval*Bterm*(2*Ihh*a_enB + IphCOS*b_enB + IphSIN*c_enB);
+          double dIheav = Gval*Aterm*(2*Iheav*a_enA + Iprot*COS*b_enA + Iprot*SIN*c_enA)
+                + Gval*Bterm*(2*Iheav*a_enB + Iprot*COS*b_enB + Iprot*SIN*c_enB);
           jacobian_one_row_indices_pt[1]= Nhkl + i_hkl;
           jacobian_one_row_data_pt[1] = dIheav;
 

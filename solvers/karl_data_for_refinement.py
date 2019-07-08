@@ -100,16 +100,27 @@ Ns = df.Gidx.unique().shape[0]
 print ("3x %d hlk and 1 x %d shots = %d UNKNOWNS" % (Nh, Ns, 3*Nh+Ns))
 print "%d MEASUREMENTS"%len(df)
 
-Fprot_prm = [abs(FT[h]) for h in U_hkl]
-Fheav_prm = [abs(FA[h]) for h in U_hkl]
-alpha_prm = [ALPHA[h] for h in U_hkl]
-Gprm = np.ones(Ns)
+Fprot_tru = [abs(FT[h]) for h in U_hkl]
+Fheav_tru = [abs(FA[h]) for h in U_hkl]
+alpha_tru = [ALPHA[h] for h in U_hkl]
+Gtru = np.random.uniform(1, 10, Ns)
+
+Fprot_prm = np.array(Fprot_tru)
+Fheav_prm = np.array(Fheav_tru)
+alpha_prm = np.array(alpha_tru)
+Gprm = np.array(Gtru)
+
+# set the per shot gain values
+assert(np.all(np.unique(df.Gidx.values) == np.arange(Ns)))
+for gi in range(Ns):
+    dfG = df.Gidx == gi
+    df.loc[dfG, "D"] = df.loc[dfG, "D"] * Gprm[gi]
 
 if args.p is not None:
     alpha_prm = np.random.permutation(alpha_prm)
     Fprot_prm = np.exp(np.random.uniform(np.log(Fprot_prm)-args.p, np.log(Fprot_prm)+args.p))
-    Fheav_prm = np.exp(np.random.uniform(np.log(Fheav_prm)-args.p, np.log(Fheav_prm)+args.p))
-    Gprm = np.random.uniform(0.5, 1.5, Ns)
+    Fheav_prm = np.random.uniform(min(Fheav_prm), max(Fheav_prm), len(Fheav_prm))
+    Gprm = np.random.uniform(min(Gprm), max(Gprm), Ns)
 
 np.savez(args.o,
         a_enA=a,
@@ -122,6 +133,10 @@ np.savez(args.o,
         Fheavy_prm=Fheav_prm,
         alpha_prm=alpha_prm,
         Gain_prm=Gprm,
+        Fprot_tru=Fprot_tru,
+        Fheavy_tru=Fheav_tru,
+        alpha_tru=alpha_tru,
+        Gain_tru=Gtru,
         Yobs=df.D.values,
         hkl=hkl, hkl_map=hkl_map,
         LA=df.LA, LB=df.LB, PA=df.PA/df.K, PB=df.PB/df.K,
