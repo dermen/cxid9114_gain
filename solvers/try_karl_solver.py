@@ -16,5 +16,7 @@ from IPython import embed
 from cxid9114.solvers.karl_solver import karl_solver
 
 KS = karl_solver(np.load(args.i), tom=args.tom)
+KS.set_values_for_lsqr()
+#KS.solve()
 embed()
 

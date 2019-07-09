@@ -2,6 +2,7 @@
 import numpy as np
 from IPython import embed
 
+from scipy.sparse.linalg import lsmr
 from scitbx.lstbx import normal_eqns_solving
 from scitbx.array_family import flex
 from scitbx.lstbx import normal_eqns
@@ -9,7 +10,7 @@ from scitbx.examples.bevington.silver import levenberg_common
 from cctbx import sgtbx, crystal, miller
 from cctbx.array_family import flex as cctbx_flex
 from cxid9114.parameters import ENERGY_CONV
-
+from scipy.sparse import coo_matrix
 import cxid9114
 
 
@@ -79,9 +80,9 @@ class karl_solver:
         else:
             print self.calc_func_TomT()[1]
             print self.helper.functional_karl_tom(self.helper.x)
-        self._solve()
+        #self._solve()
 
-    def _solve(self):
+    def solve(self):
         self.helper.restart()
         try:
             _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
@@ -133,6 +134,8 @@ class karl_solver:
              self.data["alpha_prm"],
              self.data["Gain_prm"]))
 
+        self.x = self.x_init.copy()
+
         # convert to flex
         self.x_init = flex.double(np.ascontiguousarray(self.x_init))
 
@@ -175,24 +178,135 @@ class karl_solver:
         ymodel = self.G*(Aterm+Bterm)
         return ymodel, np.sum((self.Yobs.as_numpy_array() - ymodel)**2)
 
+    def set_values_for_lsqr(self):
 
-    def calc_func_TomT(self, x=None):
+        EN = self.EN.as_numpy_array()
+        self.Nh = Nh = self.Nhkl
+        self.Aidx = self.Aidx.as_numpy_array()
+        self.Gidx = self.Gidx.as_numpy_array()
+        self.PA = self.PA.as_numpy_array()
+        self.PB = self.PB.as_numpy_array()
+        self.LB = self.LB.as_numpy_array()
+        self.LA = self.LA.as_numpy_array()
+        self.a_enA = EN[:Nh][self.Aidx]
+        self.b_enA = EN[Nh:2*Nh][self.Aidx]
+        self.c_enA = EN[2*Nh:3*Nh][self.Aidx]
+        self.a_enB = EN[3*Nh:4*Nh][self.Aidx]
+        self.b_enB = EN[4*Nh:5*Nh][self.Aidx]
+        self.c_enB = EN[5*Nh:][self.Aidx]
+
+        self.Aterm = self.LA*self.PA
+        self.Bterm = self.LB*self.PB
+
+        self.s2_A = (1+self.a_enA +self.b_enA)
+        self.s2_B = (1+self.a_enB +self.b_enB)
+
+        # sparse matrix stuff:
+        self.dFo_cols = self.Aidx.astype(int)
+        self.dFa_cols = (self.Aidx + self.Nhkl).astype(int)
+        self.dAlpha_cols = (self.Aidx + 2*self.Nhkl).astype(int)
+        self.dG_cols = (self.Gidx + 3*self.Nhkl).astype(int)
+
+        Nmeas = len(self.PB)
+        self.sparse_rows = np.array(range(Nmeas)*4, int)
+        self.sparse_cols = np.concatenate((self.dFo_cols, self.dFa_cols,
+                                          self.dAlpha_cols, self.dG_cols))
+
+        init_data = np.zeros(self.sparse_rows.shape[0], float)  # initial with empty
+        self.SPARSE_M = coo_matrix(
+            (init_data, (self.sparse_rows, self.sparse_cols)))
+
+        self.n_iters=0
+        self.residuals = []
+
+    def buildup_lsmr(self, **kwargs):
+        Fo = np.exp(self.x[:self.Nh])[self.Aidx]
+        Fa = self.x[self.Nh:2*self.Nh][self.Aidx]
+        al = self.x[2*self.Nh:3*self.Nh][self.Aidx]
+        G = self.x[3*self.Nh:][self.Gidx]
+        GAterm = G*self.Aterm
+        GBterm = G*self.Bterm
+
+        Faa = Fa*Fa
+        Foo = Fo*Fo
+        FaFo = Fa*Fo
+
+        SIN = np.sin(al)
+        COS = np.cos(al)
+
+        s1_A = (2+self.b_enA)*COS + self.c_enA*SIN
+        s1_B = (2+self.b_enB)*COS + self.c_enB*SIN
+        dFo_A = 2*Foo + s1_A * FaFo
+        dFo_B = 2*Foo + s1_B * FaFo
+        dFo = GAterm*dFo_A + GBterm*dFo_B
+
+        dFa_A = 2*self.s2_A * Fa + s1_A*Fo
+        dFa_B = 2*self.s2_B * Fa + s1_B*Fo
+        dFa = GAterm*dFa_A + GBterm*dFa_B
+
+        dAl_A = ((-2-self.b_enA)*SIN + self.c_enA*COS)*FaFo
+        dAl_B = ((-2-self.b_enB)*SIN + self.c_enB*COS)*FaFo
+        dAl = GAterm*dAl_A + GBterm*dAl_B
+
+        dG_A = Foo + self.s2_A*Fa + s1_A*FaFo
+        dG_B = Foo + self.s2_B*Fa + s1_B*FaFo
+        dG = self.Aterm*dG_A + self.Bterm*dG_B
+
+        sparse_data = np.concatenate((dFo, dFa, dAl, dG))
+        print("Setting sparse data")
+        self.SPARSE_M.data = sparse_data
+
+        betaA = Foo + self.s2_A*Fa + s1_A*FaFo
+        betaB = Foo + self.s2_B*Fa + s1_B*FaFo
+
+        self.Ymodel = GAterm*betaA + GBterm*betaB
+        self.Beta = self.Yobs - self.Ymodel
+
+        b = self.SPARSE_M.T.dot(self.Beta)
+        A = self.SPARSE_M.T.dot(self.SPARSE_M)
+        print("Solving...")
+        a = lsmr(A, b, **kwargs)[0]  # solve
+
+        self.n_iters += 1
+        self.x += a  # update
+        resid = np.dot(self.Beta, self.Beta)
+        self.residuals.append(resid)
+        print "Iter %d ; Residual: %e" % (self.n_iters, resid)
+
+
+    def calc_func_TomT(self, x=None, using_numpy=False):
         if x is None:
             x = self.helper.x.as_numpy_array()
-        Nh = self.Nhkl
-        Aidx = self.Aidx.as_numpy_array()
-        Gidx = self.Gidx.as_numpy_array()
-        EN = self.EN.as_numpy_array()
-        PA = self.PA.as_numpy_array()
-        PB = self.PB.as_numpy_array()
-        LB = self.LB.as_numpy_array()
-        LA = self.LA.as_numpy_array()
-        a_enA = EN[:Nh][Aidx]
-        b_enA = EN[Nh:2*Nh][Aidx]
-        c_enA = EN[2*Nh:3*Nh][Aidx]
-        a_enB = EN[3*Nh:4*Nh][Aidx]
-        b_enB = EN[4*Nh:5*Nh][Aidx]
-        c_enB = EN[5*Nh:][Aidx]
+        if using_numpy:
+            Nh = self.Nhkl
+            Aidx = self.Aidx
+            Gidx = self.Gidx
+            PA = self.PA
+            PB = self.PB
+            LB = self.LB
+            LA = self.LA
+            a_enA = self.a_enA
+            b_enA = self.b_enA
+            c_enA = self.c_enA
+            a_enB = self.a_enB
+            b_enB = self.b_enB
+            c_enB = self.c_enB
+
+        else:
+            Nh = self.Nhkl
+            Aidx = self.Aidx.as_numpy_array()
+            Gidx = self.Gidx.as_numpy_array()
+            EN = self.EN.as_numpy_array()
+            PA = self.PA.as_numpy_array()
+            PB = self.PB.as_numpy_array()
+            LB = self.LB.as_numpy_array()
+            LA = self.LA.as_numpy_array()
+            a_enA = EN[:Nh][Aidx]
+            b_enA = EN[Nh:2*Nh][Aidx]
+            c_enA = EN[2*Nh:3*Nh][Aidx]
+            a_enB = EN[3*Nh:4*Nh][Aidx]
+            b_enB = EN[4*Nh:5*Nh][Aidx]
+            c_enB = EN[5*Nh:][Aidx]
 
         Fo = np.exp(x[:Nh])[Aidx]
         Fa = x[Nh:2*Nh][Aidx]
@@ -210,6 +324,9 @@ class karl_solver:
 
         ymodel = G*(Aterm+Bterm)
         return ymodel, np.sum((self.Yobs.as_numpy_array() - ymodel)**2)
+
+
+
 
 
     def to_mtzA(self, hkl_map, mtz_name, x=None, verbose=False, stride=50, tom=False):
