@@ -5,6 +5,7 @@ parser = ArgumentParser("I am karl")
 parser.add_argument("-i", help="input karl", type=str)
 parser.add_argument("-o", help='output name', type=str)
 parser.add_argument("-e", help='energy in eV', type=float)
+parser.add_argument('--tom', action='store_true', help='use the tom terwilliger approach')
 args =parser.parse_args()
 
 from itertools import izip
@@ -75,16 +76,12 @@ for i_h,H in enumerate(hkl):
     Iph = abs(prot)*abs(heav)
     
     #if hand==1:
-    
-    karl = Ipp + a * Ihh + Iph * b * cos(alpha) + c * Iph * sin(alpha)
-    
-    #else:
-    #karl = Ipp + a * Ihh + Iph * b * cos(alpha) - hand * c * Iph * sin(alpha)
-    #karl2 = Ipp + a * Ihh + Iph * b * cos(alpha) - hand * c * Iph * sin(alpha)
-   
-    #if hand==1:
-    #    resid = np.abs(np.abs(tot) - np.sqrt(karl))
-    #else:
+    COS = cos(alpha)
+    SIN = sin(alpha)
+    if args.tom:
+        karl = Ipp + (1 + a + b)*Ihh + (2*COS + b*COS + c*SIN)*Iph
+    else: 
+        karl = Ipp + a * Ihh + Iph * b * COS + c * Iph * SIN
     
     resid = np.abs(np.abs(tot) - np.sqrt(karl))
     if resid > 1:  # print high residuals for debugging

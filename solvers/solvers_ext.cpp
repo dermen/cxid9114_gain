@@ -349,6 +349,51 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           return y_diff;
         }
 
+    vecd fvec_karl_tom(vecd current_values) {
+          vecd y_diff = vecd(y_obs.size());
+          for (int i = 0; i < y_obs.size(); ++i){
+
+            std::size_t i_hkl = Aidx[i];
+            std::size_t i_s = Gidx[i];
+
+            double Fo = std::exp(current_values[i_hkl]); // assumed without heavy atom
+            double Fa = current_values[Nhkl + i_hkl];
+            double alpha = current_values[2*Nhkl + i_hkl];
+            double G = current_values[3*Nhkl + i_s];
+
+            double COS = std::cos(alpha);
+            double SIN = std::sin(alpha);
+
+            double Fo2 =Fo*Fo;
+            double Fa2 =Fa*Fa;
+            double FaFo = Fa*Fo;
+
+            //for (int i_energy=0;i_energy< Nenergy; i+=3)
+
+            double a_enA = EN[i_hkl];
+            double b_enA = EN[i_hkl + Nhkl];
+            double c_enA = EN[i_hkl + 2*Nhkl];
+            double a_enB = EN[i_hkl + 3*Nhkl];
+            double b_enB = EN[i_hkl + 4*Nhkl];
+            double c_enB = EN[i_hkl + 5*Nhkl];
+
+            double karl_A = Fo2 +
+                            (1+a_enA+b_enB) * Fa2 +
+                            ((2+b_enA)*COS + c_enA*SIN) * FaFo;
+
+            double karl_B = Fo2 +
+                            (1+a_enB+b_enB) * Fa2 +
+                            ((2+b_enB)*COS + c_enB*SIN) * FaFo;
+
+
+            double y_calc = G * (karl_A * LA[i]*PA[i]
+                                        + karl_B*LB[i]*PB[i]);
+            y_diff[i] = y_obs[i] - y_calc;
+          }
+          return y_diff;
+        }
+
+
     void karlize(bool objective_only,
                  scitbx::af::shared<double> current_values) {
 
@@ -422,6 +467,90 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
         }
     }
 
+    void karlize_tom(bool objective_only,
+                 scitbx::af::shared<double> current_values) {
+
+        vecd residuals = fvec_karl(current_values);
+        if (objective_only){
+          add_residuals(residuals.const_ref(), w_obs.const_ref());
+          return;
+        }
+
+        veci jacobian_one_row_indices(4);
+        vecd jacobian_one_row_data(4);
+
+        size_t* jacobian_one_row_indices_pt = &jacobian_one_row_indices[0];
+        double* jacobian_one_row_data_pt = &jacobian_one_row_data[0];
+
+        // add one of the normal equations per each observation
+        for (int ix = 0; ix < y_obs.size(); ++ix) {
+
+          std::size_t i_hkl = Aidx[ix];
+          std::size_t i_s = Gidx[ix];
+
+          double Fo = std::exp(current_values[i_hkl]);
+          double Fa = current_values[Nhkl + i_hkl];
+          double alpha = current_values[2*Nhkl + i_hkl];
+          double Gval = current_values[3*Nhkl + i_s];
+
+            double Fo2 = Fo*Fo;
+            double Fa2 = Fa*Fa;
+            double FaFo = Fa*Fo;
+            double COS = std::cos(alpha);
+            double SIN = std::sin(alpha);
+
+            double a_enA = EN[i_hkl];
+            double b_enA = EN[i_hkl + Nhkl];
+            double c_enA = EN[i_hkl + 2*Nhkl];
+            double a_enB = EN[i_hkl + 3*Nhkl];
+            double b_enB = EN[i_hkl + 4*Nhkl];
+            double c_enB = EN[i_hkl + 5*Nhkl];
+
+          double Aterm = LA[ix]*PA[ix];
+          double Bterm = LB[ix]*PB[ix];
+
+          double coefA = (2+b_enA)*COS + c_enA*SIN;
+          double coefB = (2+b_enB)*COS + c_enB*SIN;
+
+          // first derivitive f "yobs - ycalc" w.r.t. Fo (protein term without heavy atom contribution )
+
+          double twice_Fo2 = 2*Fo2;
+          double dFo_A = twice_Fo2 + coefA*FaFo;
+          double dFo_B = twice_Fo2 + coefB*FaFo;
+          double dFo = Gval*(Aterm*dFo_A + Bterm*dFo_B);
+          jacobian_one_row_indices_pt[0]= i_hkl;
+          jacobian_one_row_data_pt[0] = dFo;
+
+          // derivitive w.r.t. Fa  (heavy atom term)
+          double dFa_A = 2*(1+a_enA+b_enA)*Fa + coefA*Fo;
+          double dFa_B = 2*(1+a_enB+b_enB)*Fa + coefB*Fo;
+
+          double dFa = Gval* (Aterm*dFa_A + Bterm*dFa_B);
+          jacobian_one_row_indices_pt[1]= Nhkl + i_hkl;
+          jacobian_one_row_data_pt[1] = dFa;
+
+          // derivitive w.r.t. alpha
+          double dalpha_A = (-2*SIN -b_enA*SIN + c_enA*COS)*FaFo;
+          double dalpha_B = (-2*SIN -b_enB*SIN + c_enB*COS)*FaFo;
+
+          double dalpha = Gval*(Aterm*dalpha_A + Bterm*dalpha_B);
+          jacobian_one_row_indices_pt[2]= 2*Nhkl + i_hkl;
+          jacobian_one_row_data_pt[2] = dalpha;
+
+          // derivitive w.r.t. G
+          double dGA = Fo2 + (1 + a_enA + b_enA)*Fa2+ coefA*FaFo;
+          double dGB = Fo2 + (1 + a_enB + b_enB)*Fa2+ coefB*FaFo;
+          double dG = Aterm*dGA + Bterm*dGB;
+          jacobian_one_row_indices_pt[3]= 3*Nhkl + i_s;
+          jacobian_one_row_data_pt[3] = dG;
+
+          //add_equation(residuals[ix], jacobian_one_row.const_ref(), weights[ix]);
+          add_residual(-residuals[ix], 1.0);
+          add_equation_eigen(residuals[ix], jacobian_one_row_indices.const_ref(), jacobian_one_row_data.const_ref(), 1.);
+        }
+    }
+
+
     double functional_karl(vecd current_values) {
       double result = 0;
       vecd fvec = fvec_karl(current_values);
@@ -430,6 +559,16 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
       }
       return result;
     }
+
+    double functional_karl_tom(vecd current_values) {
+      double result = 0;
+      vecd fvec = fvec_karl_tom(current_values);
+      for (int i = 0; i < fvec.size(); ++i) {
+        result += fvec[i]*fvec[i]*w_obs[i];
+      }
+      return result;
+    }
+
 
     vecd fvec_callable(vecd current_values) {
           vecd y_diff = vecd(y_obs.size());
@@ -618,13 +757,28 @@ namespace boost_python {
         (arg("current_values")) )
 
       .def(
+        "functional_karl_tom",
+        &lsjb::functional_karl,
+        (arg("current_values")) )
+
+      .def(
         "fvec_karl",
+        &lsjb::fvec_karl,
+        (arg("current_values")) )
+
+      .def(
+        "fvec_karl_tom",
         &lsjb::fvec_karl,
         (arg("current_values")) )
 
 
       .def(
         "karlize",
+        &lsjb::karlize,
+        (arg("objective_only"),arg("current_values")))
+
+      .def(
+        "karlize_tom",
         &lsjb::karlize,
         (arg("objective_only"),arg("current_values")))
 

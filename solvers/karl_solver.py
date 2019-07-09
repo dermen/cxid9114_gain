@@ -15,12 +15,13 @@ import cxid9114
 
 class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non_linear_ls_mixin):
 
-    def __init__(self, initial_estimates, Nh):
+    def __init__(self, initial_estimates, Nh, tom=False):
 
         super(eigen_helper, self).__init__(n_parameters=len(initial_estimates))
         self.initialize(initial_estimates)
         self.stored_functional = []
         self.Nh = Nh
+        self.tom=tom
 
     def build_up(self, objective_only=False):
         if not objective_only:
@@ -28,7 +29,11 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
 
         self.reset()
         if not objective_only:
-            functional = self.functional_karl(self.x)   # NOTE: Im a cpp function in solvers_ext.cpp
+            if not self.tom:
+                functional = self.functional_karl(self.x)   # NOTE: Im a cpp function in solvers_ext.cpp
+            else:
+                functional = self.functional_karl_tom(self.x)   # NOTE: Im a cpp function in solvers_ext.cpp
+
             G = self.x[3*self.Nh:].as_numpy_array()
             Gm =G.mean()
             Gs = G.std()
@@ -36,16 +41,17 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
             print("Count=%d Functional value: %.10e, Gain=%.3f (%.3f)" % (self.counter, functional, Gm, Gs))
             print("<><><><><><>\n")
             self.stored_functional.append(functional)
-
-        self.karlize(objective_only, current_values = self.x)
+        if not self.tom:
+            self.karlize(objective_only, current_values = self.x)
+        else:
+            self.karlize_tom(objective_only, current_values = self.x)
 
 
 class karl_solver:
 
-    def __init__(self, data, truth=None, conj_grad=True, weights=None):
+    def __init__(self, data, truth=None, conj_grad=True, weights=None, tom=False):
         self.data = data
         self.truth = truth
-
         self._prepare_constants()
         self._store_initial_guess()
         self._define_useful_scalars()
@@ -57,7 +63,8 @@ class karl_solver:
         else:
             self.Wobs = weights
 
-        self.helper = eigen_helper(initial_estimates=self.x_init, Nh=self.Nhkl)
+        self.helper = eigen_helper(initial_estimates=self.x_init, Nh=self.Nhkl, tom=tom)
+        self.helper.tom = tom
         self.helper.eigen_wrapper.conj_grad = conj_grad
 
         # NOTE: I'm a cpp function defined in solvers_ext.cpp
@@ -66,8 +73,12 @@ class karl_solver:
                 self.PA, self.PB, self.LA, self.LB, self.EN,
                 self.Nhkl, self.Ns, )
 
-        print self.calc_func()[1]
-        print self.helper.functional_karl(self.helper.x)
+        if not tom:
+            print self.calc_func()[1]
+            print self.helper.functional_karl(self.helper.x)
+        else:
+            print self.calc_func_TomT()[1]
+            print self.helper.functional_karl_tom(self.helper.x)
         self._solve()
 
     def _solve(self):
@@ -165,7 +176,43 @@ class karl_solver:
         return ymodel, np.sum((self.Yobs.as_numpy_array() - ymodel)**2)
 
 
-    def to_mtzA(self, hkl_map, mtz_name, x=None, verbose=False, stride=50):
+    def calc_func_TomT(self, x=None):
+        if x is None:
+            x = self.helper.x.as_numpy_array()
+        Nh = self.Nhkl
+        Aidx = self.Aidx.as_numpy_array()
+        Gidx = self.Gidx.as_numpy_array()
+        EN = self.EN.as_numpy_array()
+        PA = self.PA.as_numpy_array()
+        PB = self.PB.as_numpy_array()
+        LB = self.LB.as_numpy_array()
+        LA = self.LA.as_numpy_array()
+        a_enA = EN[:Nh][Aidx]
+        b_enA = EN[Nh:2*Nh][Aidx]
+        c_enA = EN[2*Nh:3*Nh][Aidx]
+        a_enB = EN[3*Nh:4*Nh][Aidx]
+        b_enB = EN[4*Nh:5*Nh][Aidx]
+        c_enB = EN[5*Nh:][Aidx]
+
+        Fo = np.exp(x[:Nh])[Aidx]
+        Fa = x[Nh:2*Nh][Aidx]
+        al = x[2*Nh:3*Nh][Aidx]
+        G = x[3*Nh:][Gidx]
+
+        COS = np.cos(al)
+        SIN = np.sin(al)
+
+        Aterm = PA*LA*(Fo*Fo + Fa*Fa*(1 + a_enA + b_enA) +
+                                Fo*Fa*(2*COS + b_enA*COS + c_enA*SIN))
+        Bterm = PB*LB*(Fo*Fo + Fa*Fa*(1 + a_enB + b_enB) +
+                       Fo*Fa*(2*COS + b_enB*COS + c_enB*SIN))
+
+
+        ymodel = G*(Aterm+Bterm)
+        return ymodel, np.sum((self.Yobs.as_numpy_array() - ymodel)**2)
+
+
+    def to_mtzA(self, hkl_map, mtz_name, x=None, verbose=False, stride=50, tom=False):
         """
         Takes the refined Fheavy and Fprot and creates an MTZ file
         for the A-channel (8944 eV) Structure factors
@@ -188,7 +235,7 @@ class karl_solver:
         hout, Iout = [], []
         for i in range(Nh):
             if verbose:
-                if i % stride==0:
+                if i % stride == 0:
                     print ("Reflection %d / %d" % (i+1, Nh))
             a = self.data["a_enA"][i]
             b = self.data["b_enA"][i]
@@ -198,7 +245,10 @@ class karl_solver:
             Fa = Fheavy[i]
             COS = np.cos(alpha[i])
             SIN = np.sin(alpha[i])
-            IA = Fp**2 + Fa**2 * a + Fa*Fp* (b*COS + c*SIN)
+            if not tom:
+                IA = Fp**2 + Fa**2 * a + Fa*Fp* (b*COS + c*SIN)
+            else:
+                IA = Fp**2 + (1+a+b)*Fa**2  + ((2+b)*COS + c*SIN)*Fp*Fa
 
             hout.append(h)
             Iout.append(IA)

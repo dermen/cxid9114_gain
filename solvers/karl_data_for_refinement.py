@@ -11,8 +11,8 @@ parser.add_argument("-min-pix", dest='deltapix_min', type=float,
 parser.add_argument('-rotmin', default=None, type=float)
 parser.add_argument('--make-shot-index', action='store_true', dest='shot_index')
 parser.add_argument('-p', type=float, default=None, help='perturbation factor')
+parser.add_argument('--tom', action='store_true', help='use the tom terwilliger approach')
 args = parser.parse_args()
-
 
 import pandas
 from itertools import izip
@@ -52,9 +52,13 @@ if args.deltapix_min is not None:
 
 df.reset_index(inplace=True,drop=True)
 
-
-karlA = np.load("../sim/karl_8944.npz")
-karlB = np.load("../sim/karl_9034.npz")
+if args.tom:
+    print "TOM"
+    karlA = np.load("../sim/TT_8944.npz")
+    karlB = np.load("../sim/TT_9034.npz")
+else:
+    karlA = np.load("../sim/karl_8944.npz")
+    karlB = np.load("../sim/karl_9034.npz")
 
 # load FT and FA from one of the energy channels only, as
 # they should be independent of energy channel
