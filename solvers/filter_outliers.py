@@ -43,14 +43,13 @@ def filter_outliers(dhkl, use_median=True, thresh=2.5, fit_gauss=True,
     out_AandB_2 = outliers[n + len(valsA):]
     out_AandB = np.logical_or(out_AandB_1, out_AandB_2)
 
+
     # sanity check
     #n1 = out_AnotB.sum() + out_BnotA.sum() + out_AandB_1.sum() + out_AandB_2.sum()
     #n2 = outliers.sum()
     #assert (n1 == n2), "%d , %d" % (n1, n2)
 
     good_vals = all_vals2[~outliers]
-    mu = np.median(good_vals)
-    sig = np.std(good_vals)
 
     if use_median:
         best_val = np.median(good_vals)**2
@@ -73,24 +72,29 @@ def filter_outliers(dhkl, use_median=True, thresh=2.5, fit_gauss=True,
     if fit_gauss:
         # fit a Gaussian to good_vals
 
+        mu = np.median(good_vals)
+        sig = np.std(good_vals)
         bins = np.linspace(mu - nsig * sig, mu + nsig * sig, len(dhkl_filt) / 2)
         xdata = .5 * bins[1:] + .5 * bins[:-1]
         ydata, _ = np.histogram(good_vals, bins=bins)
-        amp = ydata.max()
         try:
+            amp = ydata.max()
             pFit, cov = curve_fit(Gauss, xdata, ydata, p0=(amp, mu, sig))
 
             W1 = Gauss(np.sqrt(I1), *pFit)
             W2 = Gauss(np.sqrt(I2), *pFit)
             W3 = Gauss(np.sqrt(I3), *pFit)
 
-        except RuntimeError:
+        except (RuntimeError, TypeError, ValueError):
             pFit, cov = None, None
             W1 = np.zeros_like(I1)
             W2 = np.zeros_like(I2)
             W3 = np.zeros_like(I3)
     else:
         pFit = cov = None
+        W1 = np.zeros_like(I1)
+        W2 = np.zeros_like(I2)
+        W3 = np.zeros_like(I3)
 
     dhkl_filt['weights'] = np.concatenate([W1, W2, W3])
     dhkl_filt.weights /= dhkl_filt.weights.max()
