@@ -16,6 +16,7 @@ from dxtbx.model.detector import DetectorFactory
 from dxtbx.model.beam import BeamFactory
 try:
     import cxid9114
+    from cxid9114.bigsim.bigsim_geom import DET,BEAM
     HAS_D91 = True
 except ImportError:
     HAS_D91 = False
@@ -68,9 +69,9 @@ beamDict ={'direction': (0.0, 0.0, 1.0),
  'transmission': 1.0,
  'wavelength': 1.37095}
 
-BEAM = BeamFactory.from_dict(beamDict)
-DET = DetectorFactory.from_dict(detDict)
-IMG_SIZE = (1800, 1800)
+#BEAM = BeamFactory.from_dict(beamDict)
+#DET = DetectorFactory.from_dict(detDict)
+#IMG_SIZE = (1800, 1800)
 
 class FormatBigSimD9114(FormatHDF5, FormatStill):
     """

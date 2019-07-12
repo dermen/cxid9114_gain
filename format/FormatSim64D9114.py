@@ -42,11 +42,9 @@ class FormatSim64D9114(FormatHDF5, FormatStill):
             raise IncorrectFormatError(self, image_file)
         FormatHDF5.__init__(self, image_file, **kwargs)
 
-        
         self.DET64 = DetectorFactory.from_dict(multi_det_dict.D)
         self._h5_handle = h5py.File(self.get_image_file(), 'r')
         self._geometry_define()
-    
 
     def _geometry_define(self):
         self._cctbx_detector = self.DET64
