@@ -635,7 +635,7 @@ def refls_from_sims(panel_imgs, detector, beam, thresh=0, filter=None, panel_ids
     from cxid9114 import utils
 
     if panel_ids is None:
-        panel_ids = np.arange( len(detector))
+        panel_ids = np.arange(len(detector))
     pxlst_labs = []
     for i, pid in enumerate(panel_ids):
         plab = PixelListLabeller()
@@ -644,6 +644,12 @@ def refls_from_sims(panel_imgs, detector, beam, thresh=0, filter=None, panel_ids
             mask = filter(img, **kwargs) > thresh
         else:
             mask = img > thresh
+        img_sz = detector[pid].get_image_size()
+        flex_img = flex.double(img)
+        flex_img.reshape(flex.grid(img_sz))
+
+        flex_mask = flex.bool(mask)
+        flex_mask.resize(flex.grid(img_sz))
         pl = PixelList(0, flex.double(img), flex.bool(mask))
         plab.add(pl)
 

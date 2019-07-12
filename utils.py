@@ -4,7 +4,7 @@ import cPickle
 import numpy as np
 import h5py
 from dials.array_family import flex
-from dxtbx.imageset import MemReader, MemMasker
+from dxtbx.imageset import MemReader #, MemMasker
 from dxtbx.datablock import DataBlockFactory
 from dxtbx.imageset import ImageSet, ImageSetData
 from cxid9114.spots import spot_utils
@@ -68,8 +68,8 @@ def explist_from_numpyarrays(image, detector, beam, mask=None):
             mask = np.array(mask).astype(bool)
     I = FormatInMemory(image=image, mask=mask)
     reader = MemReader([I])
-    masker = MemMasker([I])
-    iset_Data = ImageSetData(reader, masker)
+    #masker = MemMasker([I])
+    iset_Data = ImageSetData(reader, None) # , masker)
     iset = ImageSet(iset_Data)
     iset.set_beam(beam)
     iset.set_detector(detector)
@@ -97,8 +97,8 @@ def datablock_from_numpyarrays(image, detector, beam, mask=None):
             mask = np.array(mask).astype(bool)
     I = FormatInMemory(image=image, mask=mask)
     reader = MemReader([I])
-    masker = MemMasker([I])
-    iset_Data = ImageSetData(reader, masker)
+    #masker = MemMasker([I])
+    iset_Data = ImageSetData(reader, None) #, masker)
     iset = ImageSet(iset_Data)
     iset.set_beam(beam)
     iset.set_detector(detector)
