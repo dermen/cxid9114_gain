@@ -667,6 +667,142 @@ def refls_from_sims(panel_imgs, detector, beam, thresh=0, filter=None, panel_ids
 
     return refls
 
+def get_prediction_boxes(refls, detector, beam, crystal,
+                    twopi_conv=True, delta_q=0.015, **kwargs):
+    """
+    this function returns a list of pylab square patches to overlay on on image
+    :param refls:
+    :param detector:
+    :param beam:
+    :param crystal:
+    :param delta_q: width of reciprocal space box in angstrom
+    :return:
+    """
+    import matplotlib as mpl
+    import pylab as plt
+
+    H, Hi, Q = refls_to_hkl(
+        refls, detector, beam, crystal,  returnQ=True)
+
+    Q = np.linalg.norm(Q,axis=1)
+    if twopi_conv:
+        Q*=2*np.pi
+    detdist = detector[0].get_distance()
+    pixsize = detector[0].get_pixel_size()[0]
+    wavelen = beam.get_wavelength()
+
+    rad1 = (detdist/pixsize) * np.tan(2*np.arcsin((Q-delta_q*.5)*wavelen/4/np.pi))
+    rad2 = (detdist/pixsize) * np.tan(2*np.arcsin((Q+delta_q*.5)*wavelen/4/np.pi))
+    delrad = rad2-rad1
+
+    patches = []
+    x,y,_ = xyz_from_refl(refls)
+    x,y = np.array(x), np.array(y)
+    x -= (1 + delrad)/2.
+    y -= (1 + delrad)/2.
+
+    for i_ref, xy in enumerate(zip(x,y)):
+        R = plt.Rectangle(xy=xy,
+                          width=delrad[i_ref],
+                          height=delrad[i_ref],
+                          **kwargs)
+        patches.append(R)
+
+    patch_coll = mpl.collections.PatchCollection(patches,
+                    match_original=True)
+    return patch_coll
+
+
+def get_white_boxes(refls_at_colors, detector, beams_of_colors, crystal,
+                    twopi_conv=True, delta_q=0.015, **kwargs):
+    """
+    this function returns a list of pylab square patches to overlay on on image
+    :param refls:
+    :param detector:
+    :param beam:
+    :param crystal:
+    :param delta_q: width of reciprocal space box in angstrom
+    :return:
+    """
+    import matplotlib as mpl
+    import pylab as plt
+
+    color_data = {}
+    color_data["Q"] = []
+    color_data["H"] = []
+    color_data["Hi"] = []
+    color_data["x"] = []
+    color_data["y"] = []
+    color_data["Qmag"] = []
+    detdist = detector[0].get_distance()
+    pixsize = detector[0].get_pixel_size()[0]
+
+    for refls, beam in zip(refls_at_colors, beams_of_colors):
+
+        H, Hi, Q = refls_to_hkl(
+            refls, detector, beam, crystal,  returnQ=True)
+
+        color_data["Q"].append(list(Q))
+        color_data["H"].append(list(H))
+        color_data["Hi"].append(list(map(tuple, Hi)))
+        Qmag = np.linalg.norm(Q, axis=1)
+        if twopi_conv:
+            Qmag*=2*np.pi
+
+        x, y, _ = xyz_from_refl(refls)
+        color_data["x"].append(x)
+        color_data["y"].append(y)
+        color_data["Qmag"].append(Qmag)
+
+    ave_wave = np.mean( [beam.get_wavelength() for beam in beams_of_colors])
+    all_indexed_Hi = [tuple(h) for hlist in color_data["Hi"] for h in hlist]
+    unique_indexed_Hi = set( all_indexed_Hi)
+
+    all_x, all_y, all_H = [], [], []
+    patches = []
+    for H in unique_indexed_Hi:
+        x_com = 0
+        y_com = 0
+        Qmag = 0
+        n_counts = 0
+        for i_color in range(len(beams_of_colors)):
+            in_color = H in color_data["Hi"][i_color]
+            if not in_color:
+                continue
+
+            idx = color_data["Hi"][i_color].index(H)
+            x_com += color_data["x"][i_color][idx] - 0.5
+            y_com += color_data["y"][i_color][idx] - 0.5
+            Qmag += color_data["Qmag"][i_color][idx]
+            n_counts += 1
+        Qmag = Qmag / n_counts
+        all_x.append(x_com / n_counts)
+        all_y.append(y_com/ n_counts)
+
+        x_com = x_com / n_counts
+        y_com = y_com / n_counts
+
+        rad1 = (detdist/pixsize) * np.tan(2*np.arcsin((Qmag-delta_q*.5)*ave_wave/4/np.pi))
+        rad2 = (detdist/pixsize) * np.tan(2*np.arcsin((Qmag+delta_q*.5)*ave_wave/4/np.pi))
+        delrad = rad2-rad1
+
+        R = plt.Rectangle(xy=(x_com-delrad/2., y_com-delrad/2.),
+                          width=delrad,
+                          height=delrad,
+                          **kwargs)
+        patches.append(R)
+
+    patch_coll = mpl.collections.PatchCollection(patches,
+                                                 match_original=True)
+    return patch_coll
+
+
+    #from collections import Counter
+
+    #counts =  Counter( all_indexed_Hi)
+    #for h,N in counts.items():
+    #    print h, N
+
 
 if __name__=="__main__":
     plot = True
