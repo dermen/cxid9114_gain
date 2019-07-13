@@ -5,12 +5,16 @@ parser = ArgumentParser("eigen solvers")
 parser.add_argument("-i", type=str, help='input_file')
 parser.add_argument("-o", type=str, help='output mtz')
 parser.add_argument("-sim", action='store_true')
+parser.add_argument("-plot", action='store_true')
+parser.add_argument("-resoshuff", action='store_true')
+parser.add_argument("-solverize", action='store_true')
 parser.add_argument("-weights", action='store_true')
 parser.add_argument("-N", type=int, default=None, help="Nshots max")
 args = parser.parse_args()
 
 import time
 import numpy as np
+from IPython import embed
 from cxid9114.solvers import solvers, gen_data
 import cxid9114
 from scitbx.lstbx import normal_eqns_solving
@@ -99,7 +103,8 @@ class eigen_helper(cxid9114.log_sparse_jac_base,levenberg_common,normal_eqns.non
 
 class eigen_solver(solvers.LBFGSsolver):
 
-  def __init__(self, conj_grad=True, weights=None,plot_truth=False, plot=False,  *args, **kwargs):
+  def __init__(self, conj_grad=True, weights=None, plot_truth=False,
+               plot=False, sovlerization_maximus=True, *args, **kwargs):
     solvers.LBFGSsolver.__init__(self, *args, **kwargs)  # NOTE: do it with lbfgs=False
     # ^ brings in Yobs, LA, LB, PA, PB, Nhkl, Ns, Nmeas,   Aidx, Gidx
 
@@ -145,25 +150,44 @@ class eigen_solver(solvers.LBFGSsolver):
 
     self.helper.restart()
 
-    try:
-      _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
-               non_linear_ls=self.helper,
-               n_max_iterations=200,
-               track_all=True,
-               step_threshold=0.0001)
-    except KeyboardInterrupt:
-      pass
-    print "End of minimization: Converged", self.helper.counter, "cycles"
-    print self.helper.get_eigen_summary()
-    print "Converged functional: ", self.helper.functional(self.helper.x)
+    if sovlerization_maximus:
+        try:
+          _ = normal_eqns_solving.levenberg_marquardt_iterations_encapsulated_eqns(
+                   non_linear_ls=self.helper,
+                   n_max_iterations=200,
+                   track_all=True,
+                   step_threshold=0.0001)
+        except (KeyboardInterrupt, AssertionError):
+          pass
+        print "End of minimization: Converged", self.helper.counter, "cycles"
+        print self.helper.get_eigen_summary()
+        print "Converged functional: ", self.helper.functional(self.helper.x)
 
 
 
 def simdata_pipeline():
     data = gen_data.gen_data(args.i, load_hkl=False, Nshot_max=args.N)
-    guesses = gen_data.guess_data(data, use_Iguess=True, perturbate=True, perturbate_factor=1)
+
+    if args.resoshuff:
+        hmap = np.load(args.i)["hkl_map"][()]
+        #reso_bins = [24, 4.5] + list(np.linspace(2, 4.3, 10)[::-1])i
+        reso_bins = [24.9840,4.3025,
+                     4.3025,3.4178,
+                     3.4178, 2.9866,
+                     2.9866, 2.7139,
+                     2.7139, 2.5195,
+                     2.5195, 2.3711,
+                     2.3711, 2.2524,
+                     2.2524, 2.1545,
+                     2.1545, 2.0716,
+                     2.0716, 2.0001]
+
+    guesses = gen_data.guess_data(data, use_Iguess=False,
+                                  perturbate=True, perturbate_factor=2.5,
+                                  hmap=hmap, reso_bins=reso_bins)
     truth = gen_data.guess_data(data, perturbate=False)
     print("Loaded")
+
 
     # t1_lb = time.time()
     # lbfgs_solver = solvers.LogIsolverCurve(
@@ -178,24 +202,28 @@ def simdata_pipeline():
     else:
         weights=None
     t1_eig = time.time()
-    ES = eigen_solver(data=data, guess=guesses, truth=truth, lbfgs=False, conj_grad=True,
-                        plot=False, weights=weights)
+    ES = eigen_solver(data=data, guess=guesses, truth=truth,
+                      lbfgs=False, conj_grad=True,
+                        plot=False, weights=weights,
+                      sovlerization_maximus=args.solverize)
     t2_eig = time.time()
 
     IB = np.exp(ES.helper.x[ES.Nhkl:2*ES.Nhkl].as_numpy_array())
     IA = np.exp(ES.helper.x[:ES.Nhkl].as_numpy_array())
+
     IAtru = np.exp(ES.IAprm_truth.as_numpy_array())
     IBtru = np.exp(ES.IBprm_truth.as_numpy_array())
-    import pylab as plt
-    plt.plot(IA, IAtru, '.')
-    plt.plot(IB, IBtru, '.')
-    ax = plt.gca()
-    ax.set_yscale('log')
-    ax.set_xscale('log')
-    plt.xlim(1e-1, 1e7)
-    plt.ylim(1e-1, 1e7)
-    plt.plot(IAtru, IBtru, '.' )
-    plt.show()
+    if args.plot:
+        import pylab as plt
+        plt.plot(IA, IAtru, '.')
+        plt.plot(IB, IBtru, '.')
+        ax = plt.gca()
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+        plt.xlim(1e-1, 1e7)
+        plt.ylim(1e-1, 1e7)
+        plt.plot(IAtru, IBtru, '.' )
+        plt.show()
 
     from cctbx import sgtbx, crystal
     from cctbx.array_family import flex
@@ -206,37 +234,55 @@ def simdata_pipeline():
     IA = ES.helper.x[:Nh].as_numpy_array()
     IB = ES.helper.x[Nh:2*Nh].as_numpy_array()
 
+    #IA = ES.x_init[:Nh].as_numpy_array()
+    #IB = ES.x_init[Nh:2*Nh].as_numpy_array()
+
     dataA = np.load(args.i)
     hkl_map = dataA["hkl_map"][()]
     hkl_map2 = {v:k for k,v in hkl_map.iteritems()}
     Nhkl = len(hkl_map)
-    assert( Nh==Nhkl)
-    hout, Iout = [],[]
+    assert(Nh == Nhkl)
+    hout, IAout, IBout = [], [], []
     for i in range(Nhkl):
         h = hkl_map2[i]
-        val = IA[i]
+        valA = IA[i]
+        valB = IB[i]
         hout.append(h)
-        Iout.append(np.exp(val))
+        IAout.append(np.exp(valA))
+        IBout.append(np.exp(valB))
 
     sg = sgtbx.space_group(" P 4nw 2abw")
-    Symm = crystal.symmetry( unit_cell=(79,79,38,90,90,90), space_group=sg)
+    Symm = crystal.symmetry(unit_cell=(79, 79, 38, 90, 90, 90), space_group=sg)
     hout = tuple(hout)
     mil_idx = flex.miller_index(hout)
     mil_set = miller.set(crystal_symmetry=Symm, indices=mil_idx, anomalous_flag=True)
-    Iout_flex = flex.double(np.ascontiguousarray(Iout))
-    mil_ar = miller.array(mil_set, data=Iout_flex).set_observation_type_xray_intensity()
-    utils.save_flex(mil_ar, "n00b_begin.pkl")
+    IAout_flex = flex.double(np.ascontiguousarray(IAout))
+    IBout_flex = flex.double(np.ascontiguousarray(IBout))
+    mil_arA = miller.array(mil_set, data=IAout_flex).set_observation_type_xray_intensity()
+    mil_arB = miller.array(mil_set, data=IBout_flex).set_observation_type_xray_intensity()
 
-    from cxid9114.parameters import  ENERGY_CONV
+    from cxid9114.parameters import ENERGY_CONV
     waveA = ENERGY_CONV/8944.
-    waveB = ENERGY_CONV/9034
-    IA = mil_ar
-    out = IA.as_mtz_dataset(column_root_label="Iobs", title="B", wavelength=waveA)
-    out.add_miller_array(miller_array=IA.average_bijvoet_mates(), column_root_label="IMEAN")
-    obj = out.mtz_object()
-    obj.write(args.o)
+    waveB = ENERGY_CONV/9034.
+    ucell = mil_arA.unit_cell()
+    sgi = mil_arA.space_group_info()
+    from iotbx import mtz
+    mtz_handle = mtz.object()
+    mtz_handle.set_title(title="MAD_MTZ")
+    mtz_handle.set_space_group_info(space_group_info=sgi)
+    mtz_handle.set_hkl_base(unit_cell=ucell)
+    mtz_cr = mtz_handle.crystals()[0] #mtz_handle.add_crystal(name="Crystal",
+        #project_name="project", unit_cell=ucell)
 
-    embed()
+    dsetA = mtz_cr.add_dataset(name="datasetA", wavelength=waveA)
+    _=dsetA.add_miller_array(miller_array=mil_arA, column_root_label="IAobs")
+
+    dsetB = mtz_cr.add_dataset(name="datasetB", wavelength=waveB)
+    _=dsetB.add_miller_array(miller_array=mil_arB, column_root_label="IBobs")
+
+    mtz_handle.show_summary()
+    mtz_handle.write(args.o)
+
     for i in range(10):
         print ES.IAprm_truth[i], np.log(ES.guess['IAprm'][i]), ES.helper.x[i]
         print ES.IBprm_truth[i], np.log(ES.guess['IBprm'][i]), ES.helper.x[ES.Nhkl+i]

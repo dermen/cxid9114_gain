@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def gen_data(input_file, noise_lvl=0,load_hkl=False, Nshot_max = None):
+def gen_data(input_file, noise_lvl=0, load_hkl=False, Nshot_max = None):
 
     #df = pandas.read_hdf("r62_simdata2_fixed_oversamp_labeled.hdf5","data")
     #ydata = df.D.values
@@ -48,7 +48,7 @@ def gen_data(input_file, noise_lvl=0,load_hkl=False, Nshot_max = None):
     if Nshot_max is not None:
         amp_remap = {a: i_a for i_a, a in enumerate(set(adata))}
         adata = np.array([amp_remap[a] for a in adata])
-        gain_remap = {g: i_g for i_g,g in enumerate(set(gdata))}
+        gain_remap = {g: i_g for i_g, g in enumerate(set(gdata))}
         gdata = np.array([gain_remap[g] for g in gdata])
 
     Nmeas = len(ydata)
@@ -68,12 +68,17 @@ def gen_data(input_file, noise_lvl=0,load_hkl=False, Nshot_max = None):
     else:
         h = k = l = None
 
+    try:
+        W = np.nan_to_num(data["Weights"])
+    except:
+        W = np.ones_like(ydata)
+
     return {"Yobs": ydata, "LA":LAdata, "LB":LBdata, "IA": FAdat**2,
             "IB": FBdat**2, "G": gains, "Aidx": adata, "Gidx": gdata,
-            "PA": PAdata, "PB": PBdata, "Iprm": data["Iprm"], "weights": np.nan_to_num(data["Weights"])}
+            "PA": PAdata, "PB": PBdata, "Iprm": data["Iprm"], "weights": W}
 
 
-def guess_data(data, perturbate=True, use_Iguess=False, perturbate_factor=.1):
+def guess_data(data, perturbate=True, use_Iguess=False, perturbate_factor=.1, hmap=None, reso_bins=None):
 
     np.random.seed(hash("no problem is insoluble in all conceivable circumstances")&((1<<32)-1) )
 
@@ -98,10 +103,37 @@ def guess_data(data, perturbate=True, use_Iguess=False, perturbate_factor=.1):
 
     if perturbate:
         _p = perturbate_factor
-        AmpA_guess = np.exp( np.random.uniform( np.log(Avals)-_p, np.log(Avals)+_p, Namp) )
-        AmpB_guess = np.exp( np.random.uniform( np.log(Bvals)-_p, np.log(Bvals)+_p, Namp) )
-        #Gain_guess = np.random.uniform(data["G"].min(), data["G"].max(), Ngain)  # going in blind here on the gain
-        Gain_guess = np.random.uniform(0.5, 1, Ngain)
+        AmpA_guess = np.exp( np.random.uniform(np.log(Avals)-_p, np.log(Avals)+_p, Namp))
+        AmpB_guess = np.exp( np.random.uniform(np.log(Bvals)-_p, np.log(Bvals)+_p, Namp))
+        if reso_bins is not None and hmap is not None:
+            a = b = 79
+            c = 38
+            reso = np.zeros(Namp)
+            hmap2 = {v: k for k, v in hmap.items()}
+            for i in range(Namp):
+                h, k, l = hmap2[i]
+                reso[i] = 1/np.sqrt(h*h/a/a+k*k/b/b+l*l/c/c)
+
+            reso_idx = np.digitize(reso, reso_bins)-1
+            unique_bin_idx = np.unique(reso_idx)
+            for i_bin in unique_bin_idx:
+                if i_bin == -1 or i_bin == len(unique_bin_idx)-1:
+                    continue
+
+                F_idx = reso_idx == i_bin
+                resoFAvals = AmpA_guess[F_idx]
+                resoFBvals = AmpB_guess[F_idx]
+
+                all_resoVals = np.hstack((resoFAvals, resoFBvals))
+
+                numF = F_idx.sum()
+                AmpA_guess[F_idx] = np.random.choice(all_resoVals,
+                                                size=numF, replace=True)
+                AmpB_guess[F_idx] = np.random.choice(all_resoVals,
+                                                size=numF, replace=True)
+
+        Gain_guess = np.random.uniform(Gvals*.5, Gvals*2)
+        #Gain_guess = np.random.uniform(1, 10, Ngain)
     else:
         AmpA_guess = Avals
         AmpB_guess = Bvals
