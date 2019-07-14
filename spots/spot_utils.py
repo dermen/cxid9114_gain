@@ -6,6 +6,8 @@ import cPickle as pickle
 from copy import deepcopy
 import numpy as np
 from scipy import ndimage
+
+
 MAX_FILT = ndimage.maximum_filter
 
 from scitbx.matrix import sqr
@@ -736,7 +738,7 @@ def get_white_boxes(refls_at_colors, detector, beams_of_colors, crystal,
     color_data["Qmag"] = []
     detdist = detector[0].get_distance()
     pixsize = detector[0].get_pixel_size()[0]
-
+    fs_dim, ss_dim = detector[0].get_image_size()
     for refls, beam in zip(refls_at_colors, beams_of_colors):
 
         H, Hi, Q = refls_to_hkl(
@@ -777,7 +779,7 @@ def get_white_boxes(refls_at_colors, detector, beams_of_colors, crystal,
             n_counts += 1
         Qmag = Qmag / n_counts
         all_x.append(x_com / n_counts)
-        all_y.append(y_com/ n_counts)
+        all_y.append(y_com / n_counts)
 
         x_com = x_com / n_counts
         y_com = y_com / n_counts
@@ -785,6 +787,16 @@ def get_white_boxes(refls_at_colors, detector, beams_of_colors, crystal,
         rad1 = (detdist/pixsize) * np.tan(2*np.arcsin((Qmag-delta_q*.5)*ave_wave/4/np.pi))
         rad2 = (detdist/pixsize) * np.tan(2*np.arcsin((Qmag+delta_q*.5)*ave_wave/4/np.pi))
         delrad = rad2-rad1
+
+        #i1 = int(max(x_com - delrad/2., 0))
+        #i2 = int(min(x_com + delrad/2., fs_dim))
+        #j1 = int(max(y_com - delrad/2., 0))
+        #j2 = int(min(y_com + delrad/2., ss_dim))
+
+        #tilt, bgmask, coeff = tilting_plane(
+        #    sub_data,
+        #    mask=sub_mask,
+        #    zscore=zscore)
 
         R = plt.Rectangle(xy=(x_com-delrad/2., y_com-delrad/2.),
                           width=delrad,
@@ -802,6 +814,158 @@ def get_white_boxes(refls_at_colors, detector, beams_of_colors, crystal,
     #counts =  Counter( all_indexed_Hi)
     #for h,N in counts.items():
     #    print h, N
+
+def tilting_plane(img, mask=None, zscore=2 ):
+    """
+    fit tilting plane to img data, used for background subtraction of spots
+    :param img:  numpy image
+    :param mask:  boolean mask, same shape as img, True is good pixels
+        mask should include strong spot pixels and bad pixels, e.g. zingers
+    :param zscore: modified z-score for outlier detection, lower increases number of outliers
+    :return: tilting plane, same shape as img
+    """
+    from cxid9114 import utils
+    Y,X = np.indices( img.shape)
+    YY,XX = Y.ravel(), X.ravel()
+
+    img1d = img.ravel()
+
+    if mask is None:
+        mask = np.ones( img.shape, bool)
+    mask1d = mask.ravel()
+
+    out1d = np.zeros( mask1d.shape, bool)
+    out1d[mask1d] = utils.is_outlier( img1d[mask1d].ravel(), zscore)
+    out2d = out1d.reshape (img.shape)
+
+    fit_sel = np.logical_and(~out2d, mask)  # fit plane to these points, no outliers, no masked
+    x,y,z = X[fit_sel], Y[fit_sel], img[fit_sel]
+    guess = np.array([np.ones_like(x), x, y ] ).T
+    coeff, r, rank, s = np.linalg.lstsq(guess, z)
+    ev = (coeff[0] + coeff[1]*XX + coeff[2]*YY )
+    return ev.reshape(img.shape), out2d, coeff
+
+
+def integrate_boxes(refls_data, data, refls_at_colors, detector, beams_of_colors, crystal,
+                    twopi_conv=True, delta_q=0.035, bad_pixel_mask=None,
+                    gain=1, imgs_at_color=None ):
+    """
+    this function returns a list of pylab square patches to overlay on on image
+    :param refls:
+    :param detector:
+    :param beam:
+    :param crystal:
+    :param delta_q: width of reciprocal space box in angstrom
+    :return:
+    """
+    import matplotlib as mpl
+    import pylab as plt
+
+    color_data = {}
+    color_data["Q"] = []
+    color_data["H"] = []
+    color_data["Hi"] = []
+    color_data["x"] = []
+    color_data["y"] = []
+    color_data["Qmag"] = []
+    detdist = detector[0].get_distance()
+    pixsize = detector[0].get_pixel_size()[0]
+    fs_dim, ss_dim = detector[0].get_image_size()
+
+    if bad_pixel_mask is None:
+        bad_pixel_mask = np.ones((ss_dim, fs_dim), bool)
+
+    # for tilting plane calc
+    allspotmask = strong_spot_mask(refls_data, (ss_dim, fs_dim))
+
+    color_integration_masks = {}
+    for i_color, refls in enumerate(refls_at_colors):
+        color_integration_masks[i_color] = \
+            strong_spot_mask(refls, (ss_dim, fs_dim))
+
+    for refls, beam in zip(refls_at_colors, beams_of_colors):
+
+        H, Hi, Q = refls_to_hkl(
+            refls, detector, beam, crystal,  returnQ=True)
+
+        color_data["Q"].append(list(Q))
+        color_data["H"].append(list(H))
+        color_data["Hi"].append(list(map(tuple, Hi)))
+        Qmag = np.linalg.norm(Q, axis=1)
+        if twopi_conv:
+            Qmag*=2*np.pi
+
+        x, y, _ = xyz_from_refl(refls)
+        color_data["x"].append(x)
+        color_data["y"].append(y)
+        color_data["Qmag"].append(Qmag)
+
+    ave_wave = np.mean( [beam.get_wavelength() for beam in beams_of_colors])
+    all_indexed_Hi = [tuple(h) for hlist in color_data["Hi"] for h in hlist]
+    unique_indexed_Hi = set( all_indexed_Hi)
+
+    all_x, all_y, all_H = [], [], []
+    patches = []
+    integrated_Hi = []
+    all_Pterms = []
+    for H in unique_indexed_Hi:
+        x_com = 0
+        y_com = 0
+        Qmag = 0
+        n_counts = 0
+        color_idx = []
+        Pterms = []
+
+        for i_color in range(len(beams_of_colors)):
+            in_color = H in color_data["Hi"][i_color]
+            if not in_color:
+                Pterms.append(0)
+                continue
+
+            idx = color_data["Hi"][i_color].index(H)
+            x_com += color_data["x"][i_color][idx] - 0.5
+            y_com += color_data["y"][i_color][idx] - 0.5
+            Qmag += color_data["Qmag"][i_color][idx]
+            n_counts += 1
+            color_idx.append(i_color)
+            Pterms.append(
+                refls_at_colors[i_color][idx]['intensity.sum.value'])
+
+        Qmag = Qmag / n_counts
+        all_x.append(x_com / n_counts)
+        all_y.append(y_com / n_counts)
+
+        x_com = x_com / n_counts
+        y_com = y_com / n_counts
+
+        rad1 = (detdist/pixsize) * np.tan(2*np.arcsin((Qmag-delta_q*.5)*ave_wave/4/np.pi))
+        rad2 = (detdist/pixsize) * np.tan(2*np.arcsin((Qmag+delta_q*.5)*ave_wave/4/np.pi))
+        delrad = rad2-rad1
+
+        i1 = int(max(x_com - delrad/2., 0))
+        i2 = int(min(x_com + delrad/2., fs_dim))
+        j1 = int(max(y_com - delrad/2., 0))
+        j2 = int(min(y_com + delrad/2., ss_dim))
+
+        sub_data = data[j1:j2, i1:i2]
+        sub_mask = ((~allspotmask) * bad_pixel_mask)[j1:j2, i1:i2]
+
+        tilt, bgmask, coeff = tilting_plane(
+            sub_data,
+            mask=sub_mask,
+            zscore=2)
+
+        data_to_be_integrated = sub_data - tilt
+
+        int_mask = np.zeros(data_to_be_integrated.shape, bool)
+        for i_color in color_idx:
+            int_mask = np.logical_or(int_mask, color_integration_masks[i_color][j1:j2, i1:i2])
+
+        Yobs = (data_to_be_integrated*int_mask).sum() / gain
+        integrated_Hi.append(Yobs)
+        all_Pterms.append(Pterms)
+
+    return list(unique_indexed_Hi), integrated_Hi, all_Pterms
 
 
 if __name__=="__main__":
