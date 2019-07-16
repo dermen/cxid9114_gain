@@ -31,7 +31,7 @@ def tilting_plane(img, mask=None, zscore=2 ):
     guess = np.array([np.ones_like(x), x, y ] ).T
     coeff, r, rank, s = np.linalg.lstsq(guess, z)
     ev = (coeff[0] + coeff[1]*XX + coeff[2]*YY )
-    return ev.reshape( img.shape), out2d, coeff
+    return ev.reshape(img.shape), out2d, coeff
 
 
 def integrate(R, badmask, data, gain=28, fit_bg=True):

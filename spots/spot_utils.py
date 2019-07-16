@@ -968,7 +968,7 @@ def integrate_boxes(refls_data, data, refls_at_colors, detector, beams_of_colors
     return list(unique_indexed_Hi), integrated_Hi, all_Pterms
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     plot = True
     fname = sys.argv[1]  # path to a strong.pickle
     cutoff = int(sys.argv[2])  # min number of spots  per hit

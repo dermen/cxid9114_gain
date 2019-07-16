@@ -263,7 +263,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
       non_linear_ls_eigen_wrapper(n_parameters){}
     // SET A SOLVE METHOD TO OVERRIDE THE CURRENT ONE
 
-    void set_cpp_data(vecd y_obs_, vecd w_obs_,
+    void set_basic_data(vecd y_obs_, vecd w_obs_,
                     veci Aidx_,
                     veci Gidx_,
                     vecd PA_,
@@ -357,9 +357,13 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
             std::size_t i_s = Gidx[i];
 
             double Fo = std::exp(current_values[i_hkl]); // assumed without heavy atom
-            double Fa = current_values[Nhkl + i_hkl];
+            double Fa = std::exp(current_values[Nhkl + i_hkl]);
             double alpha = current_values[2*Nhkl + i_hkl];
-            double G = current_values[3*Nhkl + i_s];
+            double G = std::exp(current_values[3*Nhkl + i_s]);
+
+            //if (i==0)
+            //    std::cout << Fo << " "<< Fa << " " << G << "\n";
+                //printf("%f, %f, %f, %f", Fo, Fa, alpha, G);
 
             double COS = std::cos(alpha);
             double SIN = std::sin(alpha);
@@ -470,7 +474,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
     void karlize_tom(bool objective_only,
                  scitbx::af::shared<double> current_values) {
 
-        vecd residuals = fvec_karl(current_values);
+        vecd residuals = fvec_karl_tom(current_values);
         if (objective_only){
           add_residuals(residuals.const_ref(), w_obs.const_ref());
           return;
@@ -489,9 +493,9 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           std::size_t i_s = Gidx[ix];
 
           double Fo = std::exp(current_values[i_hkl]);
-          double Fa = current_values[Nhkl + i_hkl];
+          double Fa = std::exp(current_values[Nhkl + i_hkl]);
           double alpha = current_values[2*Nhkl + i_hkl];
-          double Gval = current_values[3*Nhkl + i_s];
+          double Gval = std::exp(current_values[3*Nhkl + i_s]);
 
             double Fo2 = Fo*Fo;
             double Fa2 = Fa*Fa;
@@ -522,8 +526,8 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           jacobian_one_row_data_pt[0] = dFo;
 
           // derivitive w.r.t. Fa  (heavy atom term)
-          double dFa_A = 2*(1+a_enA+b_enA)*Fa + coefA*Fo;
-          double dFa_B = 2*(1+a_enB+b_enB)*Fa + coefB*Fo;
+          double dFa_A = 2*(1+a_enA+b_enA)*Fa2 + coefA*Fo*Fa;
+          double dFa_B = 2*(1+a_enB+b_enB)*Fa2 + coefB*Fo*Fa;
 
           double dFa = Gval* (Aterm*dFa_A + Bterm*dFa_B);
           jacobian_one_row_indices_pt[1]= Nhkl + i_hkl;
@@ -540,7 +544,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           // derivitive w.r.t. G
           double dGA = Fo2 + (1 + a_enA + b_enA)*Fa2+ coefA*FaFo;
           double dGB = Fo2 + (1 + a_enB + b_enB)*Fa2+ coefB*FaFo;
-          double dG = Aterm*dGA + Bterm*dGB;
+          double dG = Gval*Aterm*dGA + Gval*Bterm*dGB;
           jacobian_one_row_indices_pt[3]= 3*Nhkl + i_s;
           jacobian_one_row_data_pt[3] = dG;
 
@@ -569,8 +573,7 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
       return result;
     }
 
-
-    vecd fvec_callable(vecd current_values) {
+    vecd fvec_basic(vecd current_values) {
           vecd y_diff = vecd(y_obs.size());
           for (int i = 0; i < y_obs.size(); ++i){
 
@@ -588,11 +591,11 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           return y_diff;
     }
 
-    void access_cpp_build_up_directly_eigen_eqn(
+    void barf(
                             bool objective_only,
                             scitbx::af::shared<double> current_values) {
 
-        vecd residuals = fvec_callable(current_values);
+        vecd residuals = fvec_basic(current_values);
         if (objective_only){
           add_residuals(residuals.const_ref(), w_obs.const_ref());
           return;
@@ -645,9 +648,9 @@ class log_sparse_jac_base: public scitbx::example::non_linear_ls_eigen_wrapper {
           }
     }
 
-    double functional(vecd current_values) {
+    double functional_basic(vecd current_values) {
       double result = 0;
-      vecd fvec = fvec_callable(current_values);
+      vecd fvec = fvec_basic(current_values);
       for (int i = 0; i < fvec.size(); ++i) {
         result += fvec[i]*fvec[i]*w_obs[i];
       }
@@ -728,25 +731,25 @@ namespace boost_python {
       .def( init<int>(arg("n_parameters")))
 
       .def(
-        "access_cpp_build_up_directly_eigen_eqn",
-        &lsjb::access_cpp_build_up_directly_eigen_eqn,
+        "barf",
+        &lsjb::barf,
         (arg("objective_only"),arg("current_values")))
 
       .def(
-        "fvec_callable",
-        &lsjb::fvec_callable,
+        "fvec_basic",
+        &lsjb::fvec_basic,
         (arg("current_values")) )
 
       .def(
-        "functional",
-        &lsjb::functional,
+        "functional_basic",
+        &lsjb::functional_basic,
         (arg("current_values")) )
 
       //.def("solve", &lsjb::solve) // no arguments
 
       .def(
-        "set_cpp_data",
-        &lsjb::set_cpp_data,
+        "set_basic_data",
+        &lsjb::set_basic_data,
         (arg("y_obs_"), arg("w_obs_"), arg("Aidx_"), arg("Gidx_"), arg("PA_"),
          arg("PB_"), arg("LA_"), arg("LB_"), arg("Nhkl_"),
          arg("Ns_")) )
@@ -758,7 +761,7 @@ namespace boost_python {
 
       .def(
         "functional_karl_tom",
-        &lsjb::functional_karl,
+        &lsjb::functional_karl_tom,
         (arg("current_values")) )
 
       .def(
@@ -768,7 +771,7 @@ namespace boost_python {
 
       .def(
         "fvec_karl_tom",
-        &lsjb::fvec_karl,
+        &lsjb::fvec_karl_tom,
         (arg("current_values")) )
 
 
@@ -779,7 +782,7 @@ namespace boost_python {
 
       .def(
         "karlize_tom",
-        &lsjb::karlize,
+        &lsjb::karlize_tom,
         (arg("objective_only"),arg("current_values")))
 
       .def(
