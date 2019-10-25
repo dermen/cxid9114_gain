@@ -42,7 +42,7 @@ parser.add_argument("-trials", dest='num_trials', help='trials per worker',
 args = parser.parse_args()
 
 use_dials_spotter = args.dials_spot
-smi_stride = 3
+smi_stride = 100
 thresh=args.thresh
 Gauss = args.Gauss
 cuda = args.gpu
@@ -57,11 +57,11 @@ num_nodes, node_id = args.nodes
 GAIN=28
 ofile = args.ofile
 beamsize_mm = 0.001
-boost = 50
+boost = 1.0
 use_data_spec = args.real_spec
 exposure_s = 1
-Ncells_abc =(36,36,36) #(23,23,23)
-mos_doms = 120
+Ncells_abc =(22,22,22) #(23,23,23)
+mos_doms = 100
 mos_spread = .015
 make_background = args.make_bg
 bg_name = args.bg_name
@@ -175,6 +175,7 @@ def main(rank):
 
     odir = args.odir
     odirj = os.path.join(odir, "job%d" % worker_Id)
+    
     #all_pkl_files = [s for sl in \
     #    [ files for _,_, files in  os.walk(odir)]\
     #        for s in sl if s.endswith("pkl")]
@@ -203,8 +204,8 @@ def main(rank):
 
     FLUX = [1e11, 1e11]  # fluxes of the beams
 
-    chanA_flux = 1e11 
-    chanB_flux = 1e11 
+    chanA_flux = np.random.uniform(1e11,1e12) 
+    chanB_flux = np.random.uniform(1e11,1e12) 
     FLUXdat = [chanA_flux, chanB_flux]
 
     waveA = parameters.ENERGY_CONV / ENERGIES[0]
@@ -339,6 +340,7 @@ def main(rank):
                 SIM.beamsize_mm = beamsize_mm
                 SIM.flux = np.sum(data_fluxes)
                 SIM.detector_psf_kernel_radius_pixels=5;
+                #SIM.detector_psf_type=shapetype.Gauss
                 SIM.detector_psf_type=shapetype.Unknown  # for CSPAD
                 SIM.detector_psf_fwhm_mm=0
                 SIM.quantum_gain = GAIN
@@ -440,21 +442,35 @@ def main(rank):
         rhs = []
         lhs = []
         all_H2 = []
+        all_PA = []
+        all_PB = []
+        all_FA = []
+        all_FB = []
         for i in range(Nh):
+
             HKL = out[0][i]
             yobs = out[1][i]
             Pvals = out[2][i]
             ycalc = 0 
+
             for i_P, P in enumerate(Pvals):
                 L = L_at_color[i_P]
                 H2, F = get_val_at_hkl(HKL, Hmaps[i_P])
+                if i_P==0:
+                    all_FA.append(F)
+                else:
+                    all_FB.append(F)
+
                 ycalc += SCALE*L*P*abs(F)**2/K
-            
+            all_PA.append( Pvals[0])
+            all_PB.append( Pvals[1]) 
             all_H2.append(H2)
             rhs.append(ycalc)
             lhs.append(yobs)
         
-        df = pandas.DataFrame({"rhs":rhs, "lhs": lhs})
+        df = pandas.DataFrame({"rhs":rhs, "lhs": lhs, 
+            "PA":all_PA, "PB":all_PB, "FA": all_FA, 
+            "FB": all_FB})
 
         df["run"] = run
         df["shot_idx"] = shot_idx
@@ -479,8 +495,8 @@ def main(rank):
             plt.show()
         print("DonDonee")
 
-#if __name__=="__main__":
-Parallel(n_jobs=ngpu*kernels_per_gpu)(\
-    delayed(main)(rank) for rank in range(ngpu*kernels_per_gpu) )
+if __name__=="__main__":
+    Parallel(n_jobs=ngpu*kernels_per_gpu)(\
+        delayed(main)(rank) for rank in range(ngpu*kernels_per_gpu) )
 
 
